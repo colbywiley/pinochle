@@ -442,29 +442,37 @@ input[type=text]:focus { border-color: var(--gold); }
 /* ── ACTION PANEL ── */
 #action-panel {
   position: absolute;
-  bottom: auto; top: 42%;
-  left: 50%; transform: translate(-50%, -50%);
-  background: rgba(6, 18, 10, 0.97);
+  bottom: auto; top: 50%; left: 50%;
+  transform: translate(-50%, -50%);
+  background: #0b1e11;
   border: 2px solid var(--gold);
   border-radius: 10px;
-  padding: 18px 32px;
+  padding: 20px 36px;
   display: none; gap: 14px; align-items: center;
   flex-wrap: wrap; justify-content: center;
   white-space: nowrap;
   z-index: 50;
-  box-shadow: 0 8px 40px rgba(0,0,0,0.6);
+  box-shadow: 0 0 0 4000px rgba(0,0,0,0.25), 0 8px 40px rgba(0,0,0,0.6);
 }
-#action-panel.visible { display: flex; }
+#action-panel.visible { display: flex; flex-direction: column; }
+#action-panel .ap-status {
+  font-size: 0.9rem; color: var(--cream-dim);
+  text-align: center; margin-bottom: 4px;
+}
+#action-panel .ap-row {
+  display: flex; align-items: center; gap: 14px;
+  justify-content: center;
+}
 #action-panel .ap-label {
-  font-size: 1.05rem; color: var(--gold);
+  font-size: 1.1rem; color: var(--gold);
   font-weight: 700; letter-spacing: 0.04em;
 }
 #action-panel .btn {
-  font-size: 1.05rem; padding: 10px 22px;
+  font-size: 1.1rem; padding: 10px 24px;
   border-radius: 6px;
 }
 #action-panel .btn-outline {
-  font-size: 1.05rem; padding: 10px 22px;
+  font-size: 1.1rem; padding: 10px 24px;
   border-radius: 6px;
 }
 #bid-input {
@@ -794,12 +802,11 @@ input[type=text]:focus { border-color: var(--gold); }
 
 /* ── Trump burst animation el is inline-styled ── */
 
-/* ── Panels positioned well above the card fan ── */
+/* ── Panels centered on table ── */
 #pass-panel, #discard-panel {
   bottom: auto; top: 50%; transform: translate(-50%, -50%);
-}
-#action-panel {
-  bottom: auto; top: 42%; transform: translate(-50%, -50%);
+  background: #0b1e11;
+  box-shadow: 0 0 0 4000px rgba(0,0,0,0.25), 0 8px 40px rgba(0,0,0,0.6);
 }
 
 
