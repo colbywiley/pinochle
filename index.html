@@ -1,0 +1,268 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Pinochle — Card Room</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,700;0,900;1,400;1,700&family=Inconsolata:wght@400;600;700&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/peerjs/1.5.4/peerjs.min.js"></script>
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+
+<!-- ═══════════════ LOBBY ═══════════════ -->
+<div id="lobby">
+  <div class="lobby-bg-pattern"></div>
+
+  <div class="lobby-hero">
+    <div class="suit-row" aria-hidden="true">♠ ♥ ♦ ♣</div>
+    <h1>Pinochle</h1>
+    <p class="lobby-sub">Single Deck · Partners · 150 Points · Modern Rules</p>
+  </div>
+
+  <div class="lobby-panels">
+    <!-- CREATE -->
+    <div class="panel" id="panel-create">
+      <div class="panel-header">
+        <span class="panel-num">I</span>
+        <h2>Create Room</h2>
+      </div>
+      <label>Your Name</label>
+      <input type="text" id="host-name" placeholder="Name" maxlength="16" autocomplete="off">
+      <button class="btn" onclick="createRoom()">Create Game</button>
+      <div id="create-status" class="status-line"></div>
+      <div id="room-share" style="display:none">
+        <div class="divider"></div>
+        <label>Share This Code</label>
+        <div id="room-code-display">—</div>
+        <div class="copy-hint">Click to copy</div>
+        <div class="lobby-player-grid" id="lobby-players-list"></div>
+        <button class="btn btn-secondary" id="start-btn" onclick="hostStartGame()" style="display:none">
+          Start Game →
+        </button>
+        <div id="start-hint" class="status-line" style="display:none">Need 4 players to start</div>
+      </div>
+    </div>
+
+    <div class="panel-divider">or</div>
+
+    <!-- JOIN -->
+    <div class="panel" id="panel-join">
+      <div class="panel-header">
+        <span class="panel-num">II</span>
+        <h2>Join Room</h2>
+      </div>
+      <label>Your Name</label>
+      <input type="text" id="join-name" placeholder="Name" maxlength="16" autocomplete="off">
+      <label>Room Code</label>
+      <input type="text" id="room-input" placeholder="e.g. PINE42" maxlength="8"
+             style="text-transform:uppercase;letter-spacing:0.15em;font-size:1.1rem"
+             oninput="this.value=this.value.toUpperCase()"
+             autocomplete="off">
+      <button class="btn btn-outline" onclick="joinRoom()">Join →</button>
+      <div id="join-status" class="status-line"></div>
+    </div>
+  </div>
+
+  <!-- rules summary -->
+  <details class="rules-accordion">
+    <summary>Modern Rules Summary</summary>
+    <div class="rules-grid">
+      <div><strong>Deck</strong> Single 48-card (A 10 K Q J 9 × 4 suits)</div>
+      <div><strong>Goal</strong> First team to 150 points wins</div>
+      <div><strong>Bidding</strong> Min 25, bid by 1. Stick the dealer.</div>
+      <div><strong>Pass</strong> Declarer passes 3 cards blind; partner discards 3</div>
+      <div><strong>Must Head</strong> You must beat the current winning card if able</div>
+      <div><strong>Bidder Goes Out</strong> Bid team wins tie-breaker at 150</div>
+      <div><strong>Review</strong> After each round, see all 4 original hands</div>
+      <div><strong>Points</strong> A=11, 10=10, K=4, Q=3, J=2, last trick=1 (60 in play)</div>
+    </div>
+  </details>
+</div>
+
+<!-- ═══════════════ GAME ═══════════════ -->
+<div id="game">
+
+  <!-- TABLE -->
+  <div id="table">
+
+    <!-- top bar -->
+    <div id="top-bar">
+      <div id="score-display">
+        <div class="score-team" id="score-ns-wrap">
+          <span class="score-team-name" id="score-ns-name">NS</span>
+          <span class="score-val" id="score-ns">0</span>
+        </div>
+        <div class="score-sep">·</div>
+        <div class="score-team" id="score-ew-wrap">
+          <span class="score-team-name" id="score-ew-name">EW</span>
+          <span class="score-val" id="score-ew">0</span>
+        </div>
+      </div>
+      <div id="phase-bar">
+        <span id="phase-label">Bidding</span>
+        <span id="bid-summary"></span>
+      </div>
+      <div id="trump-display" style="display:none"></div>
+    </div>
+
+    <!-- SEATS -->
+    <div class="seat" id="seat-north" data-pos="north">
+      <div class="seat-video-wrap">
+        <div class="no-video">♠</div>
+        <video autoplay playsinline></video>
+        <div class="seat-label" id="name-north">—</div>
+      </div>
+      <div class="opp-hand" id="hand-north"></div>
+      <div class="bid-badge" id="badge-north"></div>
+    </div>
+    <div class="seat" id="seat-west" data-pos="west">
+      <div class="seat-video-wrap">
+        <div class="no-video">♠</div>
+        <video autoplay playsinline></video>
+        <div class="seat-label" id="name-west">—</div>
+      </div>
+      <div class="opp-hand" id="hand-west"></div>
+      <div class="bid-badge" id="badge-west"></div>
+    </div>
+    <div class="seat" id="seat-east" data-pos="east">
+      <div class="seat-video-wrap">
+        <div class="no-video">♠</div>
+        <video autoplay playsinline></video>
+        <div class="seat-label" id="name-east">—</div>
+      </div>
+      <div class="opp-hand" id="hand-east"></div>
+      <div class="bid-badge" id="badge-east"></div>
+    </div>
+    <div class="seat" id="seat-south" data-pos="south">
+      <div class="seat-video-wrap" id="local-video-wrap">
+        <div class="no-video" id="local-no-video">♠</div>
+        <video autoplay playsinline muted id="local-video"></video>
+        <div class="seat-label" id="name-south">You</div>
+      </div>
+      <div class="bid-badge" id="badge-south"></div>
+    </div>
+
+    <!-- CENTER TRICK ZONE -->
+    <div id="trick-area">
+      <div class="trick-slot" id="trick-north" data-pos="north"></div>
+      <div class="trick-slot" id="trick-west"  data-pos="west"></div>
+      <div class="trick-center">
+        <div id="tricks-taken">
+          <div class="tt-row"><span id="tt-ns-label">NS</span><span id="tt-ns">0</span></div>
+          <div class="tt-sep">tricks</div>
+          <div class="tt-row"><span id="tt-ew-label">EW</span><span id="tt-ew">0</span></div>
+        </div>
+      </div>
+      <div class="trick-slot" id="trick-east"  data-pos="east"></div>
+      <div class="trick-slot" id="trick-south" data-pos="south"></div>
+    </div>
+
+    <!-- MY HAND -->
+    <div id="my-hand"></div>
+
+    <!-- ACTION PANEL -->
+    <div id="action-panel"></div>
+
+    <!-- MELD SIDEBAR -->
+    <div id="meld-sidebar" style="display:none">
+      <div class="sidebar-title">Meld</div>
+      <div id="meld-rows"></div>
+    </div>
+
+    <!-- PASS PANEL (declarer) -->
+    <div id="pass-panel" style="display:none">
+      <div class="pass-title">Select 3 cards to pass to partner</div>
+      <div id="pass-selected-display"></div>
+      <button class="btn btn-sm" id="pass-confirm-btn" onclick="confirmPass()" disabled>Pass 3 Cards →</button>
+    </div>
+
+    <!-- DISCARD PANEL (partner after receiving) -->
+    <div id="discard-panel" style="display:none">
+      <div class="pass-title">Partner passed you 3 cards. Discard 3.</div>
+      <div id="discard-selected-display"></div>
+      <button class="btn btn-sm" id="discard-confirm-btn" onclick="confirmDiscard()" disabled>Discard 3 →</button>
+    </div>
+
+    <!-- LOG -->
+    <div id="log"></div>
+
+    <!-- CAM CONTROLS -->
+    <div id="cam-controls">
+      <button class="cam-btn" id="mute-btn" onclick="toggleMute()" title="Mute mic">🎤</button>
+      <button class="cam-btn" id="cam-btn" onclick="toggleCam()" title="Toggle camera">📷</button>
+    </div>
+
+  </div><!-- end #table -->
+</div><!-- end #game -->
+
+<!-- ═══════ MODALS ═══════ -->
+
+<!-- TRUMP SELECT -->
+<div class="modal" id="trump-modal">
+  <div class="modal-box">
+    <div class="modal-title">Name Trump</div>
+    <p>You won the bid at <strong id="won-bid-amt">—</strong>. Choose the trump suit.</p>
+    <div class="trump-opts">
+      <button class="trump-btn spade"   onclick="selectTrump('S')">♠ Spades</button>
+      <button class="trump-btn heart"   onclick="selectTrump('H')">♥ Hearts</button>
+      <button class="trump-btn diamond" onclick="selectTrump('D')">♦ Diamonds</button>
+      <button class="trump-btn club"    onclick="selectTrump('C')">♣ Clubs</button>
+    </div>
+  </div>
+</div>
+
+<!-- MELD REVIEW (after meld phase) -->
+<div class="modal" id="meld-modal">
+  <div class="modal-box wide">
+    <div class="modal-title">Meld Summary</div>
+    <div id="meld-modal-content"></div>
+    <div id="meld-modal-note" style="font-size:0.8rem;opacity:0.7;margin-top:0.75rem"></div>
+    <button class="btn" onclick="closeMeldModal()">Begin Play →</button>
+  </div>
+</div>
+
+<!-- ROUND OVER -->
+<div class="modal" id="round-modal">
+  <div class="modal-box wide">
+    <div class="modal-title" id="round-title">Round Over</div>
+    <div id="round-content"></div>
+    <div style="display:flex;gap:0.75rem;justify-content:center;margin-top:1rem;flex-wrap:wrap">
+      <button class="btn btn-outline" onclick="showDealReview()">Review Hands 🃏</button>
+      <button class="btn" id="next-round-btn" onclick="nextRound()">Next Round →</button>
+    </div>
+  </div>
+</div>
+
+<!-- DEAL REVIEW -->
+<div class="modal" id="review-modal">
+  <div class="modal-box wide" style="max-width:720px">
+    <div class="modal-title">Deal Review — Round <span id="review-round-num"></span></div>
+    <p style="font-size:0.78rem;opacity:0.6;margin-bottom:1rem">Original hands as dealt (before passing)</p>
+    <div id="review-content"></div>
+    <button class="btn btn-outline" onclick="closeReviewModal()" style="margin-top:1rem">Back</button>
+  </div>
+</div>
+
+<!-- GAME OVER -->
+<div class="modal" id="gameover-modal">
+  <div class="modal-box">
+    <div class="winner-crown">♛</div>
+    <div class="modal-title" id="winner-text">Team Wins!</div>
+    <p id="gameover-msg"></p>
+    <button class="btn" onclick="location.reload()" style="margin-top:0.5rem">New Game</button>
+  </div>
+</div>
+
+<script src="js/cards.js"></script>
+<script src="js/meld.js"></script>
+<script src="js/rules.js"></script>
+<script src="js/network.js"></script>
+<script src="js/anim.js"></script>
+<script src="js/game.js"></script>
+<script src="js/ui.js"></script>
+<script src="js/main.js"></script>
+</body>
+</html>
