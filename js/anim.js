@@ -66,7 +66,32 @@ function onResize() {
 // ── Geometry helpers ─────────────────────────────────────────
 
 function tableRect() {
-  return document.getElementById('table').getBoundingClientRect();
+  const el = document.getElementById('table');
+  if (!el) return { width: window.innerWidth, height: window.innerHeight, left: 0, top: 0 };
+  const r = el.getBoundingClientRect();
+  // If table has no size yet (layout not settled), fall back to window
+  if (r.width === 0 || r.height === 0) {
+    return { width: window.innerWidth, height: window.innerHeight, left: 0, top: 0 };
+  }
+  return r;
+}
+
+function tableCenter() {
+  const t = tableRect();
+  return { x: t.width / 2, y: t.height / 2 };
+}
+
+function getHandBaseline(dispPos) {
+  const t = tableRect();
+  const w = t.width  || window.innerWidth;
+  const h = t.height || window.innerHeight;
+  switch (dispPos) {
+    case 'south': return { cx: w / 2,      baseY: h - 110 };
+    case 'north': return { cx: w / 2,      baseY: 130 };
+    case 'west':  return { cx: 90,          baseY: h / 2 };
+    case 'east':  return { cx: w - 90,      baseY: h / 2 };
+    default:      return { cx: w / 2,      baseY: h / 2 };
+  }
 }
 
 function elCenter(el) {
@@ -88,13 +113,6 @@ function getTrickSlotRect(dispPos) {
   const t = tableRect();
   return { x: r.left - t.left, y: r.top - t.top, w: r.width, h: r.height };
 }
-
-function tableCenter() {
-  const t = tableRect();
-  return { x: t.width / 2, y: t.height / 2 };
-}
-
-// ── Card element factory ─────────────────────────────────────
 
 function createCardEl(card, faceDown = false) {
   const key = cardKey(card);
@@ -251,8 +269,8 @@ function getHandBaseline(dispPos) {
 let _dealResolve = null;
 
 async function animDeal(handsData) {
-  // handsData: { south: [{r,s},...], west: [...], ... }  (only myPos has real cards)
-  // Others get card-back stubs
+  // Wait for layout to fully settle before measuring positions
+  await wait(120);
 
   // Clear any existing cards
   clearAllCards();

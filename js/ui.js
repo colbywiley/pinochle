@@ -102,8 +102,7 @@ async function applyGameState(state) {
 async function doNewDeal() {
   animBusy = true;
   clearAllCards();
-  await wait(100);
-  await animShuffle();
+  await wait(250); // let layout fully settle before measuring positions
 
   const handsData = {};
   for (const absPos of POSITIONS) {
