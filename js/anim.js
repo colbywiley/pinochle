@@ -220,10 +220,10 @@ function fanPositions(count, containerCenterX, baseY, dispPos) {
   if (count === 0) return [];
   const isVertical = dispPos === 'west' || dispPos === 'east';
 
-  // Arc parameters — tighter spread, natural held-in-hand curve
-  const spreadPx  = Math.min(40, 480 / count);  // px between card centers
+  // Arc parameters — tight overlap like holding real cards
+  const spreadPx  = Math.min(32, 380 / count);  // px between card centers (~60% overlap)
   const totalW    = spreadPx * (count - 1);
-  const arcRadius = Math.max(300, count * 28);   // controls arc depth
+  const arcRadius = Math.max(280, count * 26);   // controls arc depth
   const maxRot    = Math.min(MAX_FAN_ROT, count * 2.5);
 
   const positions = [];

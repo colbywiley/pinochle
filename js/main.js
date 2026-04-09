@@ -301,14 +301,12 @@ function updateSoloSwitcher() {
   if (!soloMode || !G) return;
 
   // Figure out whose turn it is
-  let activeSeat = null;
-  if (G.phase === 'bidding') activeSeat = G.currentBidder;
-  else if (G.phase === 'passing') activeSeat = G.highBidder;
-  else if (G.phase === 'discarding') activeSeat = partnerOf(G.highBidder);
-  else if (G.phase === 'naming_trump') activeSeat = G.highBidder;
-  else if (G.phase === 'playing') {
-    if (!G.currentTrick?.length) activeSeat = G.trickLeader;
-    else activeSeat = leftOf(G.currentTrick[G.currentTrick.length-1].seat);
+  let activeSeat = soloWhoseTurn();
+
+  // Auto-switch to the active seat so the action panel shows immediately
+  if (activeSeat && activeSeat !== myPos) {
+    soloSwitchSeat(activeSeat);
+    return; // soloSwitchSeat triggers re-render which calls updateSoloSwitcher again
   }
 
   document.querySelectorAll('.solo-seat-btn').forEach(b => {
@@ -317,10 +315,9 @@ function updateSoloSwitcher() {
 
   const ind = document.getElementById('solo-turn-indicator');
   if (ind) {
-    if (activeSeat && activeSeat !== myPos) {
-      ind.textContent = `← switch to ${activeSeat.charAt(0).toUpperCase()+activeSeat.slice(1)}'s turn`;
-    } else if (activeSeat === myPos) {
-      ind.textContent = '← your turn';
+    if (activeSeat === myPos) {
+      const name = activeSeat.charAt(0).toUpperCase() + activeSeat.slice(1);
+      ind.textContent = `${name}'s turn`;
     } else {
       ind.textContent = '';
     }

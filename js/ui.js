@@ -291,9 +291,12 @@ function renderActionPanel() {
     const allOthersPassed = POSITIONS.filter(p=>p!==G.dealer).every(p=>G.bids[p]===0);
     const isStuck = G.dealer === myPos && allOthersPassed;
 
+    const seatName = myPos.charAt(0).toUpperCase() + myPos.slice(1);
     const label = document.createElement('span');
     label.className = 'ap-label';
-    label.textContent = isStuck ? '⚑ Stuck — must bid:' : 'Your bid:';
+    label.textContent = isStuck
+      ? `${seatName} is stuck — must bid:`
+      : `${seatName}'s Bid:`;
     panel.appendChild(label);
 
     const inp = document.createElement('input');
@@ -302,13 +305,13 @@ function renderActionPanel() {
     panel.appendChild(inp);
 
     const bidBtn = document.createElement('button');
-    bidBtn.className='btn btn-sm'; bidBtn.textContent='Bid';
+    bidBtn.className='btn'; bidBtn.textContent='Bid';
     bidBtn.onclick = () => sendToHost({ action:'bid', amount:parseInt(inp.value) });
     panel.appendChild(bidBtn);
 
     if (!isStuck) {
       const passBtn = document.createElement('button');
-      passBtn.className='btn btn-sm btn-outline'; passBtn.textContent='Pass';
+      passBtn.className='btn btn-outline'; passBtn.textContent='Pass';
       passBtn.onclick = () => sendToHost({ action:'bid', amount:0 });
       panel.appendChild(passBtn);
     }
@@ -317,9 +320,12 @@ function renderActionPanel() {
 
   if (G.phase === 'playing' && isMyTurn()) {
     panel.classList.add('visible');
+    const seatName = myPos.charAt(0).toUpperCase() + myPos.slice(1);
     const lbl = document.createElement('span');
     lbl.className = 'ap-label';
-    lbl.textContent = !G.currentTrick?.length ? '♦ Your lead' : '▲ Must head trick if able';
+    lbl.textContent = !G.currentTrick?.length
+      ? `${seatName} leads — click a card to play`
+      : `${seatName}'s turn — must head trick if able`;
     panel.appendChild(lbl);
   }
 }

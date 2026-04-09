@@ -679,7 +679,7 @@ input[type=text]:focus { border-color: var(--gold); }
 .anim-card.selected-anim {
   filter: drop-shadow(0 0 0 3px var(--gold)) drop-shadow(0 8px 20px rgba(0,0,0,0.6));
 }
-.anim-card.disabled-anim { opacity: 0.4; cursor: not-allowed !important; }
+.anim-card.disabled-anim { opacity: 0.7; cursor: not-allowed !important; }
 .anim-card.trick-card-anim { z-index: 40; }
 
 /* ── Card faces ── */
