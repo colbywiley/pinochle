@@ -36,9 +36,16 @@ function cardKey(c) { return c.id || (c.r + c.s); }
 
 function sameCard(a, b) { return a.r === b.r && a.s === b.s; }
 
-/** Sort hand: suits grouped, within suit by rank desc */
-function sortHand(hand) {
+/** Sort hand: suits grouped, within suit by rank desc.
+ *  If trump is set, trump suit moves to the right end. */
+function sortHand(hand, trump) {
   hand.sort((a, b) => {
+    if (trump) {
+      // Trump suit goes last (rightmost)
+      const aT = a.s === trump ? 1 : 0;
+      const bT = b.s === trump ? 1 : 0;
+      if (aT !== bT) return aT - bT;
+    }
     if (a.s !== b.s) return SUITS.indexOf(a.s) - SUITS.indexOf(b.s);
     return RANK_ORDER[b.r] - RANK_ORDER[a.r];
   });

@@ -65,7 +65,7 @@ async function applyGameState(state) {
       // Solo: re-fan that seat's real hand face-up
       const dispFrom2 = absToDisplay(newest.seat);
       const hand2 = Array.isArray(G.hands?.[newest.seat]) ? [...G.hands[newest.seat]] : [];
-      sortHand(hand2);
+      sortHand(hand2, G.trump);
       rebuildHandFan(dispFrom2, hand2, { selKeys:[], legalKeys:[], clickable:false, onCardClick:null });
     } else {
       const cnt = G.hands[newest.seat]?.count ?? 0;
@@ -125,7 +125,7 @@ function refreshAllHands() {
     for (const absPos of POSITIONS) {
       const dispPos = absToDisplay(absPos);
       const hand    = Array.isArray(G.hands?.[absPos]) ? [...G.hands[absPos]] : [];
-      sortHand(hand);
+      sortHand(hand, G.trump);
       if (!hand.length) continue;
       if (absPos === myPos) {
         refreshMyHandInteraction(hand);
@@ -159,7 +159,7 @@ function soloWhoseTurn() {
 
 function rebuildMyHandFan() {
   const hand = Array.isArray(G.hands?.[myPos]) ? [...G.hands[myPos]] : [];
-  sortHand(hand);
+  sortHand(hand, G.trump);
   refreshMyHandInteraction(hand);
 }
 
@@ -283,7 +283,7 @@ function renderSeats() {
 
 function renderActionPanel() {
   const panel = document.getElementById('action-panel');
-  panel.innerHTML = ''; panel.classList.remove('visible');
+  panel.innerHTML = ''; panel.classList.remove('visible'); panel.classList.remove('play-hint');
 
   if (G.phase === 'bidding' && G.currentBidder === myPos && G.bids?.[myPos] === null) {
     panel.classList.add('visible');
@@ -336,14 +336,36 @@ function renderActionPanel() {
   }
 
   if (G.phase === 'playing' && isMyTurn()) {
-    panel.classList.add('visible');
+    panel.classList.add('visible', 'play-hint');
     const seatName = myPos.charAt(0).toUpperCase() + myPos.slice(1);
     const lbl = document.createElement('span');
     lbl.className = 'ap-label';
     lbl.textContent = !G.currentTrick?.length
-      ? `${seatName} leads — click a card to play`
-      : `${seatName}'s turn — must head trick if able`;
+      ? `${seatName} leads — click a card`
+      : `${seatName}'s turn — must head if able`;
     panel.appendChild(lbl);
+    if (G.trump) {
+      const trump = document.createElement('span');
+      trump.className = 'ap-trump';
+      trump.textContent = `Trump: ${SUIT_SYM[G.trump]}`;
+      trump.style.cssText = `font-size:1rem; margin-left:12px; color:${RED_SUITS.has(G.trump)?'#ff6666':'var(--cream)'}`;
+      lbl.appendChild(trump);
+    }
+  }
+
+  // Waiting message when it's not your turn during play
+  if (G.phase === 'playing' && !isMyTurn()) {
+    const whosTurn = soloWhoseTurn ? soloWhoseTurn() : null;
+    // Only show in non-solo mode (solo auto-switches)
+    if (!soloMode && whosTurn) {
+      panel.classList.add('visible', 'play-hint');
+      const name = playerMap[whosTurn]?.name || whosTurn;
+      const lbl = document.createElement('span');
+      lbl.className = 'ap-label';
+      lbl.style.opacity = '0.7';
+      lbl.textContent = `Waiting for ${name}...`;
+      panel.appendChild(lbl);
+    }
   }
 }
 
@@ -503,7 +525,7 @@ function showDealReview() {
     const hand   = G.dealtHands?.[pos] || [];
     const isArr  = Array.isArray(hand);
     const sorted = isArr ? [...hand] : [];
-    if (isArr) sortHand(sorted);
+    if (isArr) sortHand(sorted, G.trump);
     const div = document.createElement('div');
     div.className='review-hand-block';
     div.innerHTML=`<div class="review-hand-name">${name} (${pos.toUpperCase()})</div>
