@@ -100,11 +100,9 @@ async function applyGameState(state) {
 // ── NEW DEAL SEQUENCE ─────────────────────────────────────────
 
 async function doNewDeal() {
-  console.log('[doNewDeal] start — myPos:', myPos, 'soloMode:', soloMode);
   animBusy = true;
   clearAllCards();
   await wait(250);
-  console.log('[doNewDeal] table size:', document.getElementById('table')?.getBoundingClientRect()?.width, 'x', document.getElementById('table')?.getBoundingClientRect()?.height);
   await animShuffle();
 
   const handsData = {};
@@ -115,9 +113,7 @@ async function doNewDeal() {
       handsData[absPos] = absPos === myPos ? G.hands[myPos] : null;
     }
   }
-  console.log('[doNewDeal] calling animDeal, south hand:', handsData['south']?.length, 'cards');
   await animDeal(handsData);
-  console.log('[doNewDeal] animDeal complete');
   animBusy = false;
   refreshAllHands();
 }
@@ -251,11 +247,26 @@ function renderTopBar() {
 // ── SEATS ────────────────────────────────────────────────────
 
 function renderSeats() {
+  // Determine whose turn it is for the active-turn indicator
+  let activeSeat = null;
+  if (G.phase === 'bidding')      activeSeat = G.currentBidder;
+  else if (G.phase === 'passing') activeSeat = G.highBidder;
+  else if (G.phase === 'discarding') activeSeat = partnerOf(G.highBidder);
+  else if (G.phase === 'naming_trump') activeSeat = G.highBidder;
+  else if (G.phase === 'playing') {
+    if (!G.currentTrick?.length) activeSeat = G.trickLeader;
+    else activeSeat = leftOf(G.currentTrick[G.currentTrick.length-1].seat);
+  }
+
   for (const pos of POSITIONS) {
     const disp   = absToDisplay(pos);
     const info   = playerMap[pos];
     const nameEl = document.getElementById('name-' + disp);
     if (nameEl) nameEl.textContent = info ? (pos===myPos?'You · '+info.name : info.name) : '—';
+
+    // Turn indicator glow
+    const seatEl = document.getElementById('seat-' + disp);
+    if (seatEl) seatEl.classList.toggle('active-turn', pos === activeSeat);
 
     const badge = document.getElementById('badge-' + disp);
     if (badge) {
