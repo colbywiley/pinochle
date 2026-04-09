@@ -483,6 +483,10 @@ function rebuildHandFan(dispPos, cardDataList, opts = {}) {
 }
 
 function rebuildOppStubs(dispPos, count) {
+  // In solo mode, opponent hands are real face-up cards managed by rebuildHandFan
+  // called from refreshAllHands — skip stub generation
+  if (typeof soloMode !== 'undefined' && soloMode) return;
+
   // Remove old stubs
   animLayer.querySelectorAll(`[data-stub^="${dispPos}-"]`).forEach(e => e.remove());
 
