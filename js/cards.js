@@ -17,9 +17,11 @@ const TRICK_PTS = { A:11, '10':10, K:4, Q:3, J:2, '9':0 };
 
 function makeDeck() {
   const d = [];
-  for (const s of SUITS)
-    for (const r of RANKS)
-      d.push({ r, s, id: r + s + '_' + Math.random().toString(36).slice(2,6) });
+  // Single-deck pinochle: TWO copies of each card = 48 total
+  for (let copy = 0; copy < 2; copy++)
+    for (const s of SUITS)
+      for (const r of RANKS)
+        d.push({ r, s, id: r + s + '_' + copy + '_' + Math.random().toString(36).slice(2,6) });
   return d;
 }
 

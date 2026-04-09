@@ -486,7 +486,9 @@ function rebuildHandFan(dispPos, cardDataList, opts = {}) {
       zIndex: 30 + i,
     });
 
-    if (dispPos === 'south') {
+    // In solo mode, any seat can be interactive; in multiplayer, only south
+    const isActiveSeat = (typeof soloMode !== 'undefined' && soloMode) ? clickable : (dispPos === 'south');
+    if (isActiveSeat) {
       newEl.style.pointerEvents = 'auto';
       const isLegal = legalKeys.length === 0 || legalKeys.includes(key);
       newEl.classList.toggle('disabled-anim', !isLegal || !clickable);

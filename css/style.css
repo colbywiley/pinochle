@@ -288,7 +288,7 @@ input[type=text]:focus { border-color: var(--gold); }
   50%     { box-shadow: 0 0 18px rgba(122,255,154,0.6); }
 }
 .seat[data-pos="south"] {
-  bottom: 6px; left: 50%; transform: translateX(-50%);
+  bottom: 50px; left: 50%; transform: translateX(-50%);
 }
 .seat[data-pos="north"] {
   top: 46px; left: 50%; transform: translateX(-50%);
@@ -459,10 +459,10 @@ input[type=text]:focus { border-color: var(--gold); }
   box-shadow: 0 0 0 4000px rgba(0,0,0,0.35), 0 8px 40px rgba(0,0,0,0.6);
 }
 #action-panel.visible { display: flex; }
-/* Playing phase: smaller hint at bottom, no scrim */
+/* Playing phase: smaller hint near center, no scrim */
 #action-panel.play-hint {
-  top: auto; bottom: 180px;
-  transform: translateX(-50%);
+  top: 35%; bottom: auto;
+  transform: translate(-50%, -50%);
   padding: 12px 24px;
   box-shadow: 0 4px 20px rgba(0,0,0,0.5);
   border-width: 1px;
@@ -510,7 +510,7 @@ input[type=text]:focus { border-color: var(--gold); }
   border-radius: 10px;
   padding: 20px 32px;
   display: flex; flex-direction: column; gap: 12px;
-  align-items: center; z-index: 25;
+  align-items: center; z-index: 55;
   text-align: center;
   box-shadow: 0 8px 40px rgba(0,0,0,0.6);
   pointer-events: auto;

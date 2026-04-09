@@ -279,6 +279,12 @@ function bestInTrick(trick, trump) {
 }
 
 function resolveTrick(state) {
+  // Snapshot the 4-card trick before clearing (for animation)
+  const trickSnapshot = {
+    cards: state.currentTrick.map(t => ({ seat: t.seat, card: { ...t.card } })),
+    ledSuit: state.trickLedSuit,
+  };
+
   const winner = trickWinner(state.currentTrick, state.trump);
   const team   = teamOf(winner);
   state.tricksWon[team]++;
@@ -298,10 +304,10 @@ function resolveTrick(state) {
   state.trickLedSuit = null;
 
   if (isLast) {
-    return { ok:true, log:trickLog, trickDone:true, roundOver: finishRound(state) };
+    return { ok:true, log:trickLog, trickDone:true, trickSnapshot, roundOver: finishRound(state) };
   }
 
-  return { ok:true, log:trickLog, trickDone:true };
+  return { ok:true, log:trickLog, trickDone:true, trickSnapshot };
 }
 
 function finishRound(state) {

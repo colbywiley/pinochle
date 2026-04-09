@@ -3,13 +3,17 @@
 // ══════════════════════════════════════════
 
 // ── Position helpers ──────────────────────────────────────────
+// In solo mode: fixed perspective (south=south always, no rotation)
+// In multiplayer: rotate so myPos always displays at south
 function absToDisplay(absPos) {
   if (!myPos) return absPos;
+  if (typeof soloMode !== 'undefined' && soloMode) return absPos;
   return ['south','west','north','east'][
     (POSITIONS.indexOf(absPos) - POSITIONS.indexOf(myPos) + 4) % 4];
 }
 function displayToAbs(dispPos) {
   if (!myPos) return dispPos;
+  if (typeof soloMode !== 'undefined' && soloMode) return dispPos;
   const di = ['south','west','north','east'].indexOf(dispPos);
   return POSITIONS[(POSITIONS.indexOf(myPos) + di) % 4];
 }
@@ -165,7 +169,7 @@ function rebuildMyHandFan() {
 
 function refreshMyHandInteraction(hand) {
   hand = hand || (Array.isArray(G.hands?.[myPos]) ? [...G.hands[myPos]] : []);
-  sortHand(hand);
+  sortHand(hand, G.trump);
   if (!hand.length) return;
 
   const isPassPhase    = G.phase === 'passing'    && G.highBidder === myPos;
@@ -181,7 +185,8 @@ function refreshMyHandInteraction(hand) {
 
   const clickable = isPassPhase || isDiscardPhase || myTurn;
 
-  rebuildHandFan('south', hand, {
+  const myDisp = absToDisplay(myPos);
+  rebuildHandFan(myDisp, hand, {
     selKeys,
     legalKeys: myTurn ? legalKeys : (clickable ? hand.map(c => cardKey(c)) : []),
     clickable,
@@ -316,12 +321,13 @@ function renderActionPanel() {
 
     const inp = document.createElement('input');
     inp.type='number'; inp.id='bid-input'; inp.min=minBid; inp.max=99; inp.value=minBid;
-    inp.addEventListener('keydown', e => { if(e.key==='Enter') sendToHost({ action:'bid', amount:parseInt(inp.value) }); });
+    const getBidAmount = () => { const v = parseInt(inp.value); return isNaN(v) ? minBid : v; };
+    inp.addEventListener('keydown', e => { if(e.key==='Enter') sendToHost({ action:'bid', amount:getBidAmount() }); });
     row.appendChild(inp);
 
     const bidBtn = document.createElement('button');
     bidBtn.className='btn'; bidBtn.textContent='Bid';
-    bidBtn.onclick = () => sendToHost({ action:'bid', amount:parseInt(inp.value) });
+    bidBtn.onclick = () => sendToHost({ action:'bid', amount:getBidAmount() });
     row.appendChild(bidBtn);
 
     if (!isStuck) {
@@ -412,7 +418,8 @@ async function confirmPass() {
   const cards = [...passSelectedCards];
   passSelectedCards = [];
   const toDisp = absToDisplay(partnerOf(myPos));
-  await animPassCards(cards, 'south', toDisp);
+  const fromDisp = absToDisplay(myPos);
+  await animPassCards(cards, fromDisp, toDisp);
   sendToHost({ action:'pass_cards', cards });
 }
 
@@ -420,7 +427,8 @@ async function confirmDiscard() {
   if (discardSelected.length !== 3) return;
   const cards = [...discardSelected];
   discardSelected = [];
-  await animDiscardCards(cards, 'south');
+  const fromDisp = absToDisplay(myPos);
+  await animDiscardCards(cards, fromDisp);
   sendToHost({ action:'discard_cards', cards });
 }
 
@@ -486,6 +494,11 @@ function showMeldModal() {
 }
 function closeMeldModal() {
   document.getElementById('meld-modal').classList.remove('visible');
+  // Immediately advance to playing phase (don't wait for 6s timeout)
+  if (isHost && G && G.phase === 'meld') {
+    startPlaying(G);
+    broadcastGameState();
+  }
   renderMeldSidebar();
 }
 
