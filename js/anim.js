@@ -280,15 +280,24 @@ async function animDeal(handsData) {
   const totalCards    = 48;
   const dealInterval  = 55; // ms between cards
 
-  // Pre-sort my hand
-  const myHand = handsData[myPos] ? [...handsData[myPos]] : [];
-  sortHand(myHand);
+  // Pre-sort all hands
+  const sortedHands = {};
+  for (const dp of dispPositions) {
+    const absP = displayToAbs(dp);
+    const raw  = handsData[absP];
+    if (raw && Array.isArray(raw)) {
+      const h = [...raw];
+      sortHand(h);
+      sortedHands[dp] = h;
+    } else {
+      sortedHands[dp] = null; // card backs
+    }
+  }
 
   // Build per-seat card lists
   const seatCards = {};
   for (const dp of dispPositions) {
-    const absP = displayToAbs(dp);
-    seatCards[dp] = absP === myPos ? myHand : null; // null = backs
+    seatCards[dp] = sortedHands[dp]; // null = backs, array = face-up
   }
   const seatCounts = { south: 0, west: 0, north: 0, east: 0 };
   const seatHandEls = { south: [], west: [], north: [], east: [] };
@@ -429,10 +438,9 @@ function rebuildHandFan(dispPos, cardDataList, opts = {}) {
     const key = cardKey(card);
     let entry = CARD_REGISTRY[key];
     if (!entry) {
-      // Create the card element if missing
       const el = createCardEl(card);
-      el.style.left  = baseline.cx - CARD_W/2 + 'px';
-      el.style.top   = baseline.baseY - CARD_H/2 + 'px';
+      el.style.left  = (baseline.cx - CARD_W/2) + 'px';
+      el.style.top   = (baseline.baseY - CARD_H/2) + 'px';
       animLayer.appendChild(el);
       entry = { el, cardData: card, dispPos };
       CARD_REGISTRY[key] = entry;

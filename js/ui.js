@@ -61,6 +61,12 @@ async function applyGameState(state) {
     // Update hand display
     if (newest.seat === myPos) {
       rebuildMyHandFan();
+    } else if (typeof soloMode !== 'undefined' && soloMode) {
+      // Solo: re-fan that seat's real hand face-up
+      const dispFrom2 = absToDisplay(newest.seat);
+      const hand2 = Array.isArray(G.hands?.[newest.seat]) ? [...G.hands[newest.seat]] : [];
+      sortHand(hand2);
+      rebuildHandFan(dispFrom2, hand2, { selKeys:[], legalKeys:[], clickable:false, onCardClick:null });
     } else {
       const cnt = G.hands[newest.seat]?.count ?? 0;
       rebuildOppStubs(dispFrom, cnt);
@@ -118,38 +124,24 @@ async function doNewDeal() {
 
 function refreshAllHands() {
   if (typeof soloMode !== 'undefined' && soloMode) {
-    // Solo: show all 4 hands face-up, all from each seat's display perspective
     for (const absPos of POSITIONS) {
       const dispPos = absToDisplay(absPos);
       const hand    = Array.isArray(G.hands?.[absPos]) ? [...G.hands[absPos]] : [];
       sortHand(hand);
-
-      const isActivePos = absPos === myPos; // currently "controlled" seat
-      const isTurnPos   = soloWhoseTurn() === absPos;
-
+      if (!hand.length) continue;
       if (absPos === myPos) {
         refreshMyHandInteraction(hand);
       } else {
-        // Show face-up but only make clickable if it's that seat's turn AND
-        // the user has switched to that seat
-        const legalKeys = (isTurnPos && absPos === myPos)
-          ? legalPlays(G, absPos).map(c => cardKey(c)) : [];
-
-        rebuildHandFan(dispPos, hand, {
-          selKeys: [],
-          legalKeys: [],
-          clickable: false,
-          onCardClick: null,
-        });
+        rebuildHandFan(dispPos, hand, { selKeys:[], legalKeys:[], clickable:false, onCardClick:null });
       }
     }
     return;
   }
   rebuildMyHandFan();
   for (const disp of ['west','north','east']) {
-    const absPos = displayToAbs(disp);
+    const absPos    = displayToAbs(disp);
     const countData = G.hands?.[absPos];
-    const count = countData?.count ?? (Array.isArray(countData) ? countData.length : 0);
+    const count     = countData?.count ?? (Array.isArray(countData) ? countData.length : 0);
     rebuildOppStubs(disp, count);
   }
 }
