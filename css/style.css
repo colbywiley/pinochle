@@ -277,6 +277,15 @@ input[type=text]:focus { border-color: var(--gold); }
   display: flex; flex-direction: column;
   align-items: center; gap: 4px;
 }
+.seat.active-turn .seat-video-wrap {
+  border-color: #7aff9a;
+  box-shadow: 0 0 12px rgba(122,255,154,0.5);
+  animation: seatPulse 1.5s ease-in-out infinite;
+}
+@keyframes seatPulse {
+  0%,100% { box-shadow: 0 0 8px rgba(122,255,154,0.3); }
+  50%     { box-shadow: 0 0 18px rgba(122,255,154,0.6); }
+}
 .seat[data-pos="south"] {
   bottom: 6px; left: 50%; transform: translateX(-50%);
 }
@@ -706,6 +715,15 @@ input[type=text]:focus { border-color: var(--gold); }
 
 .anim-card.flipped {
   transform: rotateY(180deg);
+}
+
+/* Flat card back (stub cards that never flip — no 3D transforms) */
+.anim-card-back-flat {
+  position: absolute; inset: 0;
+  border-radius: 7px;
+  background: linear-gradient(145deg, #1a4a80 0%, #0d2a5a 50%, #081a40 100%);
+  border: 2px solid rgba(255,255,255,0.2);
+  overflow: hidden;
 }
 
 /* ── Card face content ── */

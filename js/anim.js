@@ -379,14 +379,16 @@ async function animDeal(handsData) {
 }
 
 function createCardBack() {
+  // Stub card back — no 3D flip needed since these never flip face-up.
+  // Uses a flat back face so inline transform (rotate) won't break visibility.
   const el = document.createElement('div');
-  el.className = 'anim-card flipped';
+  el.className = 'anim-card';
   el.style.cssText = `
     position:absolute; width:${CARD_W}px; height:${CARD_H}px;
-    transform-style:preserve-3d; pointer-events:none; will-change:transform;
+    pointer-events:none; will-change:transform;
   `;
   const back = document.createElement('div');
-  back.className = 'anim-card-face anim-card-back';
+  back.className = 'anim-card-face anim-card-back-flat';
   back.innerHTML = `<div class="ac-back-pattern"></div>`;
   el.appendChild(back);
   return el;
