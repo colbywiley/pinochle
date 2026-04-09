@@ -272,6 +272,11 @@ async function animDeal(handsData) {
   // Wait for layout to fully settle before measuring positions
   await wait(120);
 
+  const tr = tableRect();
+  console.log('[animDeal] tableRect:', tr.width, 'x', tr.height);
+  console.log('[animDeal] handsData keys:', Object.keys(handsData));
+  console.log('[animDeal] south hand length:', handsData['south']?.length ?? handsData.south);
+
   // Clear any existing cards
   clearAllCards();
 

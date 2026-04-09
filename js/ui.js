@@ -100,23 +100,26 @@ async function applyGameState(state) {
 // ── NEW DEAL SEQUENCE ─────────────────────────────────────────
 
 async function doNewDeal() {
+  console.log('[doNewDeal] start — myPos:', myPos, 'soloMode:', soloMode);
   animBusy = true;
   clearAllCards();
-  await wait(250); // let layout fully settle before measuring positions
+  await wait(250);
+  console.log('[doNewDeal] table size:', document.getElementById('table')?.getBoundingClientRect()?.width, 'x', document.getElementById('table')?.getBoundingClientRect()?.height);
+  await animShuffle();
 
   const handsData = {};
   for (const absPos of POSITIONS) {
-    // Solo mode: reveal all hands; normal: only reveal myPos
     if (typeof soloMode !== 'undefined' && soloMode) {
       handsData[absPos] = G.hands[absPos];
     } else {
       handsData[absPos] = absPos === myPos ? G.hands[myPos] : null;
     }
   }
+  console.log('[doNewDeal] calling animDeal, south hand:', handsData['south']?.length, 'cards');
   await animDeal(handsData);
-
+  console.log('[doNewDeal] animDeal complete');
   animBusy = false;
-  refreshMyHandInteraction();
+  refreshAllHands();
 }
 
 // ── HAND REFRESH ─────────────────────────────────────────────

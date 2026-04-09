@@ -149,8 +149,12 @@ function hostStartGame() {
 function enterGame() {
   document.getElementById('lobby').style.display = 'none';
   document.getElementById('game').classList.add('active');
-  // Boot animation engine after layout is visible
-  requestAnimationFrame(() => requestAnimationFrame(() => initAnimLayer()));
+  // Init anim layer immediately — table is now visible
+  requestAnimationFrame(() => {
+    requestAnimationFrame(() => {
+      initAnimLayer();
+    });
+  });
 }
 
 // ── LOBBY HELPERS ─────────────────────────────────────────────────────────────
@@ -236,23 +240,24 @@ function startSoloMode() {
   myPos    = 'south';
   myName   = 'South';
 
-  // Fill all 4 seats with dummy players
   playerMap['south'] = { name:'South', peerId:'solo-s' };
   playerMap['west']  = { name:'West',  peerId:'solo-w' };
   playerMap['north'] = { name:'North', peerId:'solo-n' };
   playerMap['east']  = { name:'East',  peerId:'solo-e' };
 
-  // Start the game immediately
   G = newRound(null);
   dealCards(G);
 
+  // Enter game FIRST so #table is visible and has dimensions
   enterGame();
 
   // Show solo switcher
   document.getElementById('solo-switcher').style.display = 'flex';
 
-  // Apply full state (all 4 hands visible)
-  applyGameStateSolo();
+  // Wait for layout to paint before triggering state/deal animation
+  setTimeout(() => {
+    applyGameStateSolo();
+  }, 300);
 }
 
 /**
