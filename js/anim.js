@@ -303,7 +303,7 @@ async function animDeal(handsData) {
     const raw  = handsData[absP];
     if (raw && Array.isArray(raw)) {
       const h = [...raw];
-      sortHand(h);
+      sortHand(h, typeof G !== 'undefined' && G ? G.trump : null);
       sortedHands[dp] = h;
     } else {
       sortedHands[dp] = null; // card backs
@@ -473,6 +473,10 @@ function rebuildHandFan(dispPos, cardDataList, opts = {}) {
     entry.el.replaceWith(newEl);
     entry.el = newEl;
     CARD_REGISTRY[key].el = newEl;
+
+    // Mark trump suit cards
+    const isTrump = typeof G !== 'undefined' && G && G.trump && card.s === G.trump;
+    newEl.classList.toggle('trump-suit', !!isTrump);
 
     const liftExtra = isSel ? -10 : 0;
     animMoveTo(newEl, p.x, p.y + liftExtra, p.rot, {
