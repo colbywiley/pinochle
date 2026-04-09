@@ -100,11 +100,9 @@ async function applyGameState(state) {
 // ── NEW DEAL SEQUENCE ─────────────────────────────────────────
 
 async function doNewDeal() {
-  console.log('[doNewDeal] start — myPos:', myPos, 'soloMode:', soloMode);
   animBusy = true;
   clearAllCards();
   await wait(250);
-  console.log('[doNewDeal] table size:', document.getElementById('table')?.getBoundingClientRect()?.width, 'x', document.getElementById('table')?.getBoundingClientRect()?.height);
   await animShuffle();
 
   const handsData = {};
@@ -115,9 +113,7 @@ async function doNewDeal() {
       handsData[absPos] = absPos === myPos ? G.hands[myPos] : null;
     }
   }
-  console.log('[doNewDeal] calling animDeal, south hand:', handsData['south']?.length, 'cards');
   await animDeal(handsData);
-  console.log('[doNewDeal] animDeal complete');
   animBusy = false;
   refreshAllHands();
 }

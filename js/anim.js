@@ -23,9 +23,9 @@
 // ── Constants ────────────────────────────────────────────────
 const CARD_W    = 80;   // px, matches CSS
 const CARD_H    = 120;
-const FAN_LIFT  = 20;   // px upward lift on hover in fan
+const FAN_LIFT  = 22;   // px upward lift on hover in fan
 const FAN_SPREAD = 28;  // px overlap reduction vs full stack
-const MAX_FAN_ROT = 36; // degrees total arc for 12-card hand
+const MAX_FAN_ROT = 32; // degrees total arc for 12-card hand
 
 // Seat anchor positions (center of each seat area, relative to #table)
 // These are recomputed on resize via getSeatCenter()
@@ -105,6 +105,8 @@ function createCardEl(card, faceDown = false) {
   const key = cardKey(card);
   const isRed = RED_SUITS.has(card.s);
   const sym = SUIT_SYM[card.s];
+  const isFace = card.r === 'J' || card.r === 'Q' || card.r === 'K';
+  const faceIcons = { J: '\u265E', Q: '\u265B', K: '\u265A' }; // knight, queen, king chess
 
   const wrapper = document.createElement('div');
   wrapper.className = 'anim-card' + (isRed ? ' red' : '');
@@ -120,11 +122,14 @@ function createCardEl(card, faceDown = false) {
 
   // Front face
   const front = document.createElement('div');
-  front.className = 'anim-card-face anim-card-front' + (isRed ? ' red' : '');
+  front.className = 'anim-card-face anim-card-front' + (isRed ? ' red' : '') + (isFace ? ' face-card' : '');
+  const centerArt = isFace
+    ? `<div class="ac-face-icon">${faceIcons[card.r]}</div>`
+    : '';
   front.innerHTML = `
-    <div class="ac-corner">${card.r}<br>${sym}</div>
-    <div class="ac-center">${sym}</div>
-    <div class="ac-corner ac-corner-bot">${card.r}<br>${sym}</div>`;
+    <div class="ac-corner"><span class="ac-rank">${card.r}</span><span class="ac-suit">${sym}</span></div>
+    ${centerArt}
+    <div class="ac-corner ac-corner-bot"><span class="ac-rank">${card.r}</span><span class="ac-suit">${sym}</span></div>`;
 
   // Back face
   const back = document.createElement('div');
@@ -215,24 +220,25 @@ function fanPositions(count, containerCenterX, baseY, dispPos) {
   if (count === 0) return [];
   const isVertical = dispPos === 'west' || dispPos === 'east';
 
-  // Arc parameters scale with hand size
-  const spreadPx  = Math.min(55, 700 / count);  // px between card centers
+  // Arc parameters — tighter spread, natural held-in-hand curve
+  const spreadPx  = Math.min(40, 480 / count);  // px between card centers
   const totalW    = spreadPx * (count - 1);
-  const arcRadius = Math.max(400, count * 50);   // larger = flatter arc
-  const maxRot    = Math.min(MAX_FAN_ROT, count * 2.8);
+  const arcRadius = Math.max(300, count * 28);   // controls arc depth
+  const maxRot    = Math.min(MAX_FAN_ROT, count * 2.5);
 
   const positions = [];
   for (let i = 0; i < count; i++) {
     const t    = count === 1 ? 0 : (i / (count - 1)) - 0.5; // -0.5 to 0.5
     const xOff = t * totalW;
-    const yOff = (t * t) * (totalW * totalW) / (2 * arcRadius); // parabolic arc
+    // Held-in-hand arc: center rises toward table, edges droop at baseline
+    const yOff = (0.25 - t * t) * (totalW * totalW) / (2 * arcRadius);
     const rot  = t * maxRot;
 
     if (isVertical) {
       const yPos = baseY + xOff;
       const xPos = dispPos === 'west'
-        ? containerCenterX + yOff   // arc curves rightward (toward center)
-        : containerCenterX - yOff;  // arc curves leftward (toward center)
+        ? containerCenterX + yOff   // center curves rightward (toward table)
+        : containerCenterX - yOff;  // center curves leftward (toward table)
       positions.push({ x: xPos, y: yPos, rot: rot + (dispPos === 'west' ? 90 : -90) });
     } else if (dispPos === 'north') {
       positions.push({ x: containerCenterX + xOff, y: baseY + yOff, rot: rot + 180 });
@@ -246,10 +252,10 @@ function fanPositions(count, containerCenterX, baseY, dispPos) {
 function getHandBaseline(dispPos) {
   const t = tableRect();
   switch (dispPos) {
-    case 'south': return { cx: t.width / 2,      baseY: t.height - 130 };
-    case 'north': return { cx: t.width / 2,      baseY: 130 };
-    case 'west':  return { cx: 90,                baseY: t.height / 2 };
-    case 'east':  return { cx: t.width - 90,      baseY: t.height / 2 };
+    case 'south': return { cx: t.width / 2,      baseY: t.height - 110 };
+    case 'north': return { cx: t.width / 2,      baseY: 110 };
+    case 'west':  return { cx: 80,                baseY: t.height / 2 };
+    case 'east':  return { cx: t.width - 80,      baseY: t.height / 2 };
   }
 }
 
@@ -262,9 +268,6 @@ async function animDeal(handsData) {
   await wait(120);
 
   const tr = tableRect();
-  console.log('[animDeal] tableRect:', tr.width, 'x', tr.height);
-  console.log('[animDeal] handsData keys:', Object.keys(handsData));
-  console.log('[animDeal] south hand length:', handsData['south']?.length ?? handsData.south);
 
   // Clear any existing cards
   clearAllCards();

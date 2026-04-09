@@ -32,7 +32,7 @@ function shuffle(arr) {
   return a;
 }
 
-function cardKey(c) { return c.r + c.s; }
+function cardKey(c) { return c.id || (c.r + c.s); }
 
 function sameCard(a, b) { return a.r === b.r && a.s === b.s; }
 

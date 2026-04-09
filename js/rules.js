@@ -214,9 +214,9 @@ function processPlayCard(state, fromPos, card) {
     return { ok:false, error:'Illegal play — must follow suit and/or head the trick' };
   }
 
-  // Remove from hand and add to trick
-  state.hands[fromPos].splice(cardIdx, 1);
-  state.currentTrick.push({ seat: fromPos, card: { r:card.r, s:card.s } });
+  // Remove from hand and add to trick (preserve id for animation tracking)
+  const playedCard = state.hands[fromPos].splice(cardIdx, 1)[0];
+  state.currentTrick.push({ seat: fromPos, card: playedCard });
   if (state.currentTrick.length === 1) state.trickLedSuit = card.s;
 
   // Trick complete?
