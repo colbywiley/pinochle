@@ -115,6 +115,11 @@ function startNextRound() {
  * Host applies own view directly.
  */
 function broadcastGameState() {
+  // Solo mode: no network, just re-render locally with full visibility
+  if (soloMode) {
+    applyGameStateSolo();
+    return;
+  }
   for (const [pos, conn] of Object.entries(dataConns)) {
     const view = buildPlayerView(G, pos);
     sendConn(conn, { type:'game_state', state: view });

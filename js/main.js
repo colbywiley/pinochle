@@ -221,6 +221,102 @@ async function initPeer(id) {
   });
 }
 
+// ══════════════════════════════════════════════════════════════
+//  SOLO TEST MODE
+//  No networking. Host runs everything locally.
+//  myPos rotates to whichever seat you click.
+//  All 4 hands are visible face-up and clickable when active.
+// ══════════════════════════════════════════════════════════════
+
+let soloMode = false;
+
+function startSoloMode() {
+  soloMode = true;
+  isHost   = true;
+  myPos    = 'south';
+  myName   = 'South';
+
+  // Fill all 4 seats with dummy players
+  playerMap['south'] = { name:'South', peerId:'solo-s' };
+  playerMap['west']  = { name:'West',  peerId:'solo-w' };
+  playerMap['north'] = { name:'North', peerId:'solo-n' };
+  playerMap['east']  = { name:'East',  peerId:'solo-e' };
+
+  // Start the game immediately
+  G = newRound(null);
+  dealCards(G);
+
+  enterGame();
+
+  // Show solo switcher
+  document.getElementById('solo-switcher').style.display = 'flex';
+
+  // Apply full state (all 4 hands visible)
+  applyGameStateSolo();
+}
+
+/**
+ * In solo mode, apply state WITHOUT redacting any hands.
+ * Overrides the normal applyGameState for the solo path.
+ */
+async function applyGameStateSolo() {
+  // Build a view where myPos sees everything
+  const fullView = buildSoloView(G);
+  await applyGameState(fullView);
+  updateSoloSwitcher();
+}
+
+function buildSoloView(state) {
+  // Clone state but expose ALL hands to the current viewer
+  const v = JSON.parse(JSON.stringify(state));
+  // All hands stay as arrays (no redaction)
+  return v;
+}
+
+/** Switch which seat "you" are playing as */
+function soloSwitchSeat(seat) {
+  myPos  = seat;
+  myName = seat.charAt(0).toUpperCase() + seat.slice(1);
+
+  // Update active button
+  document.querySelectorAll('.solo-seat-btn').forEach(b => {
+    b.classList.toggle('active', b.dataset.seat === seat);
+  });
+
+  // Re-render everything from new perspective
+  if (G) applyGameStateSolo();
+}
+
+function updateSoloSwitcher() {
+  if (!soloMode || !G) return;
+
+  // Figure out whose turn it is
+  let activeSeat = null;
+  if (G.phase === 'bidding') activeSeat = G.currentBidder;
+  else if (G.phase === 'passing') activeSeat = G.highBidder;
+  else if (G.phase === 'discarding') activeSeat = partnerOf(G.highBidder);
+  else if (G.phase === 'naming_trump') activeSeat = G.highBidder;
+  else if (G.phase === 'playing') {
+    if (!G.currentTrick?.length) activeSeat = G.trickLeader;
+    else activeSeat = leftOf(G.currentTrick[G.currentTrick.length-1].seat);
+  }
+
+  document.querySelectorAll('.solo-seat-btn').forEach(b => {
+    b.classList.toggle('is-turn', b.dataset.seat === activeSeat);
+  });
+
+  const ind = document.getElementById('solo-turn-indicator');
+  if (ind) {
+    if (activeSeat && activeSeat !== myPos) {
+      ind.textContent = `← switch to ${activeSeat.charAt(0).toUpperCase()+activeSeat.slice(1)}'s turn`;
+    } else if (activeSeat === myPos) {
+      ind.textContent = '← your turn';
+    } else {
+      ind.textContent = '';
+    }
+  }
+}
+
 // ── GITHUB PAGES: show URL hint ───────────────────────────────────────────────
 window.addEventListener('load', () => {
   // If there's a ?room= query param, pre-fill join field

@@ -86,6 +86,9 @@ async function applyGameState(state) {
   prevPhase    = G.phase;
 
   checkModals();
+
+  // Solo mode: update turn indicator after every state change
+  if (typeof soloMode !== 'undefined' && soloMode) updateSoloSwitcher();
 }
 
 // ── NEW DEAL SEQUENCE ─────────────────────────────────────────
@@ -98,7 +101,12 @@ async function doNewDeal() {
 
   const handsData = {};
   for (const absPos of POSITIONS) {
-    handsData[absPos] = absPos === myPos ? G.hands[myPos] : null;
+    // Solo mode: reveal all hands; normal: only reveal myPos
+    if (typeof soloMode !== 'undefined' && soloMode) {
+      handsData[absPos] = G.hands[absPos];
+    } else {
+      handsData[absPos] = absPos === myPos ? G.hands[myPos] : null;
+    }
   }
   await animDeal(handsData);
 
@@ -109,6 +117,34 @@ async function doNewDeal() {
 // ── HAND REFRESH ─────────────────────────────────────────────
 
 function refreshAllHands() {
+  if (typeof soloMode !== 'undefined' && soloMode) {
+    // Solo: show all 4 hands face-up, all from each seat's display perspective
+    for (const absPos of POSITIONS) {
+      const dispPos = absToDisplay(absPos);
+      const hand    = Array.isArray(G.hands?.[absPos]) ? [...G.hands[absPos]] : [];
+      sortHand(hand);
+
+      const isActivePos = absPos === myPos; // currently "controlled" seat
+      const isTurnPos   = soloWhoseTurn() === absPos;
+
+      if (absPos === myPos) {
+        refreshMyHandInteraction(hand);
+      } else {
+        // Show face-up but only make clickable if it's that seat's turn AND
+        // the user has switched to that seat
+        const legalKeys = (isTurnPos && absPos === myPos)
+          ? legalPlays(G, absPos).map(c => cardKey(c)) : [];
+
+        rebuildHandFan(dispPos, hand, {
+          selKeys: [],
+          legalKeys: [],
+          clickable: false,
+          onCardClick: null,
+        });
+      }
+    }
+    return;
+  }
   rebuildMyHandFan();
   for (const disp of ['west','north','east']) {
     const absPos = displayToAbs(disp);
@@ -116,6 +152,19 @@ function refreshAllHands() {
     const count = countData?.count ?? (Array.isArray(countData) ? countData.length : 0);
     rebuildOppStubs(disp, count);
   }
+}
+
+function soloWhoseTurn() {
+  if (!G) return null;
+  if (G.phase === 'bidding') return G.currentBidder;
+  if (G.phase === 'passing') return G.highBidder;
+  if (G.phase === 'discarding') return partnerOf(G.highBidder);
+  if (G.phase === 'naming_trump') return G.highBidder;
+  if (G.phase === 'playing') {
+    if (!G.currentTrick?.length) return G.trickLeader;
+    return leftOf(G.currentTrick[G.currentTrick.length-1].seat);
+  }
+  return null;
 }
 
 function rebuildMyHandFan() {

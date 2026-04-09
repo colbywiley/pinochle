@@ -66,6 +66,12 @@
     </div>
   </div>
 
+  <!-- SOLO TEST -->
+  <div class="solo-bar">
+    <button class="btn btn-solo" onclick="startSoloMode()">🃏 Solo Test Mode — Play All 4 Hands</button>
+    <span class="solo-hint">No network needed · See all cards · Click each seat's turn</span>
+  </div>
+
   <!-- rules summary -->
   <details class="rules-accordion">
     <summary>Modern Rules Summary</summary>
@@ -184,6 +190,16 @@
       <div class="pass-title">Partner passed you 3 cards. Discard 3.</div>
       <div id="discard-selected-display"></div>
       <button class="btn btn-sm" id="discard-confirm-btn" onclick="confirmDiscard()" disabled>Discard 3 →</button>
+    </div>
+
+    <!-- SOLO MODE SEAT SWITCHER -->
+    <div id="solo-switcher" style="display:none">
+      <span class="solo-sw-label">Playing as:</span>
+      <button class="solo-seat-btn active" data-seat="south" onclick="soloSwitchSeat('south')">South</button>
+      <button class="solo-seat-btn" data-seat="west"  onclick="soloSwitchSeat('west')">West</button>
+      <button class="solo-seat-btn" data-seat="north" onclick="soloSwitchSeat('north')">North</button>
+      <button class="solo-seat-btn" data-seat="east"  onclick="soloSwitchSeat('east')">East</button>
+      <span id="solo-turn-indicator" class="solo-turn-ind"></span>
     </div>
 
     <!-- LOG -->
