@@ -267,6 +267,11 @@ function startSoloMode() {
 async function applyGameStateSolo() {
   // Build a view where myPos sees everything
   const fullView = buildSoloView(G);
+  // On a new deal (entering bidding from game start or round_over), clear G
+  // so applyGameState detects the 0→12 card transition and triggers doNewDeal
+  if (fullView.phase === 'bidding' && (prevPhase === null || prevPhase === 'round_over')) {
+    G = null;
+  }
   await applyGameState(fullView);
   updateSoloSwitcher();
 }
