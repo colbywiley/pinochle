@@ -754,3 +754,73 @@ input[type=text]:focus { border-color: var(--gold); }
   bottom: 110px;
 }
 
+
+/* ── SOLO MODE ── */
+.solo-bar {
+  display: flex; align-items: center; gap: 1rem; flex-wrap: wrap;
+  justify-content: center;
+}
+.btn-solo {
+  background: transparent;
+  color: var(--cream-dim);
+  border: 1px dashed rgba(201,168,76,0.3);
+  font-family: 'Inconsolata', monospace;
+  font-size: 0.85rem;
+  padding: 0.45rem 1rem;
+  border-radius: 1px;
+  cursor: pointer;
+  letter-spacing: 0.05em;
+  transition: color 0.15s, border-color 0.15s;
+}
+.btn-solo:hover { color: var(--gold); border-color: var(--gold); }
+.solo-hint {
+  font-size: 0.65rem; color: var(--cream-dim);
+  opacity: 0.5; letter-spacing: 0.08em;
+}
+
+/* In-game solo switcher */
+#solo-switcher {
+  position: absolute; bottom: 10px; left: 50%; transform: translateX(-50%);
+  background: rgba(8,22,13,0.9);
+  border: 1px solid var(--border-gold);
+  border-radius: 2px;
+  padding: 5px 10px;
+  display: flex; align-items: center; gap: 6px;
+  z-index: 30;
+  white-space: nowrap;
+}
+.solo-sw-label {
+  font-size: 0.62rem; color: var(--gold-dk);
+  text-transform: uppercase; letter-spacing: 0.1em;
+  margin-right: 2px;
+}
+.solo-seat-btn {
+  background: rgba(255,255,255,0.06);
+  border: 1px solid var(--border-gold);
+  border-radius: 1px;
+  color: var(--cream-dim);
+  font-family: 'Inconsolata', monospace;
+  font-size: 0.72rem; padding: 2px 8px;
+  cursor: pointer;
+  transition: background 0.12s, color 0.12s;
+}
+.solo-seat-btn:hover { background: rgba(201,168,76,0.15); color: var(--cream); }
+.solo-seat-btn.active {
+  background: var(--gold); color: #111; font-weight: 700;
+  border-color: var(--gold);
+}
+.solo-seat-btn.is-turn {
+  border-color: #7aff9a; color: #7aff9a;
+  animation: soloPulse 1.2s ease-in-out infinite;
+}
+.solo-seat-btn.active.is-turn {
+  background: #7aff9a; color: #111; border-color: #7aff9a;
+}
+@keyframes soloPulse {
+  0%,100% { box-shadow: 0 0 0 0 rgba(122,255,154,0); }
+  50%      { box-shadow: 0 0 0 4px rgba(122,255,154,0.25); }
+}
+.solo-turn-ind {
+  font-size: 0.65rem; color: #7aff9a;
+  letter-spacing: 0.05em; margin-left: 4px;
+}
