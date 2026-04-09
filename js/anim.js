@@ -239,9 +239,10 @@ function fanPositions(count, containerCenterX, baseY, dispPos) {
       const xPos = dispPos === 'west'
         ? containerCenterX + yOff   // center curves rightward (toward table)
         : containerCenterX - yOff;  // center curves leftward (toward table)
-      positions.push({ x: xPos, y: yPos, rot: rot + (dispPos === 'west' ? 90 : -90) });
+      // Negate rot so fan opens outward (card tops point away from table center)
+      positions.push({ x: xPos, y: yPos, rot: -rot + (dispPos === 'west' ? 90 : -90) });
     } else if (dispPos === 'north') {
-      positions.push({ x: containerCenterX + xOff, y: baseY + yOff, rot: rot + 180 });
+      positions.push({ x: containerCenterX + xOff, y: baseY + yOff, rot: -rot + 180 });
     } else {
       positions.push({ x: containerCenterX + xOff, y: baseY - yOff, rot });
     }
