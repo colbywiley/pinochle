@@ -290,31 +290,48 @@ function renderActionPanel() {
     const minBid = Math.max(MIN_BID, G.highBid + 1);
     const allOthersPassed = POSITIONS.filter(p=>p!==G.dealer).every(p=>G.bids[p]===0);
     const isStuck = G.dealer === myPos && allOthersPassed;
-
     const seatName = myPos.charAt(0).toUpperCase() + myPos.slice(1);
+
+    // Current bid status line
+    if (G.highBid > 0 && G.highBidder) {
+      const bidderName = playerMap[G.highBidder]?.name || G.highBidder;
+      const status = document.createElement('div');
+      status.className = 'ap-status';
+      status.textContent = `Current high bid: ${G.highBid} by ${bidderName}`;
+      panel.appendChild(status);
+    } else {
+      const status = document.createElement('div');
+      status.className = 'ap-status';
+      status.textContent = 'No bids yet — minimum bid is 25';
+      panel.appendChild(status);
+    }
+
+    const row = document.createElement('div');
+    row.className = 'ap-row';
+
     const label = document.createElement('span');
     label.className = 'ap-label';
-    label.textContent = isStuck
-      ? `${seatName} is stuck — must bid:`
-      : `${seatName}'s Bid:`;
-    panel.appendChild(label);
+    label.textContent = isStuck ? `${seatName} must bid:` : `${seatName}'s Bid:`;
+    row.appendChild(label);
 
     const inp = document.createElement('input');
     inp.type='number'; inp.id='bid-input'; inp.min=minBid; inp.max=99; inp.value=minBid;
     inp.addEventListener('keydown', e => { if(e.key==='Enter') sendToHost({ action:'bid', amount:parseInt(inp.value) }); });
-    panel.appendChild(inp);
+    row.appendChild(inp);
 
     const bidBtn = document.createElement('button');
     bidBtn.className='btn'; bidBtn.textContent='Bid';
     bidBtn.onclick = () => sendToHost({ action:'bid', amount:parseInt(inp.value) });
-    panel.appendChild(bidBtn);
+    row.appendChild(bidBtn);
 
     if (!isStuck) {
       const passBtn = document.createElement('button');
       passBtn.className='btn btn-outline'; passBtn.textContent='Pass';
       passBtn.onclick = () => sendToHost({ action:'bid', amount:0 });
-      panel.appendChild(passBtn);
+      row.appendChild(passBtn);
     }
+
+    panel.appendChild(row);
     setTimeout(()=>inp?.focus(), 60);
   }
 
