@@ -299,11 +299,12 @@ function renderActionPanel() {
   const panel = document.getElementById('action-panel');
   panel.innerHTML = ''; panel.classList.remove('visible'); panel.classList.remove('play-hint');
 
-  if (G.phase === 'bidding' && G.currentBidder === myPos && G.bids?.[myPos] === null) {
+  // Show bid panel when it's myPos's turn and they haven't passed (null or >0 bid)
+  if (G.phase === 'bidding' && G.currentBidder === myPos && G.bids?.[myPos] !== 0) {
     panel.classList.add('visible');
     const minBid = Math.max(MIN_BID, G.highBid + 1);
     const allOthersPassed = POSITIONS.filter(p=>p!==G.dealer).every(p=>G.bids[p]===0);
-    const isStuck = G.dealer === myPos && allOthersPassed;
+    const isStuck = G.dealer === myPos && allOthersPassed && G.highBid === 0;
     const seatName = myPos.charAt(0).toUpperCase() + myPos.slice(1);
 
     // Current bid status line

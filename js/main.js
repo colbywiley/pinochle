@@ -259,6 +259,15 @@ function startSoloMode() {
   playerMap['north'] = { name:'North', peerId:'solo-n' };
   playerMap['east']  = { name:'East',  peerId:'solo-e' };
 
+  // Show the solo start panel (mirrors multiplayer flow — click Deal to start)
+  document.getElementById('solo-start-panel').style.display = 'flex';
+  // Hide the lobby entry points (Create/Join/Solo button) while in solo setup
+  document.querySelector('.lobby-panels').style.display     = 'none';
+  document.querySelector('.solo-bar').style.display         = 'none';
+}
+
+/** Actually deal the cards and begin the solo game — parallels hostStartGame() */
+function startSoloGame() {
   G = newRound(null);
   dealCards(G);
 

@@ -69,8 +69,18 @@ function dealCards(state) {
 function processBid(state, fromPos, amount) {
   if (state.phase !== 'bidding') return { ok:false, error:'Not bidding phase' };
   if (state.currentBidder !== fromPos) return { ok:false, error:'Not your turn to bid' };
+  // Once you pass, you're out
+  if (state.bids[fromPos] === 0) return { ok:false, error:'You have already passed' };
 
   const passing = (amount === 0);
+
+  // Stuck dealer can't pass: all others passed and dealer hasn't bid yet
+  if (passing && fromPos === state.dealer) {
+    const others = POSITIONS.filter(p => p !== state.dealer);
+    if (others.every(p => state.bids[p] === 0) && state.highBid === 0) {
+      return { ok:false, error:`Dealer is stuck — must bid at least ${MIN_BID}` };
+    }
+  }
 
   if (!passing) {
     const minAllowed = Math.max(MIN_BID, state.highBid + 1);
@@ -81,18 +91,14 @@ function processBid(state, fromPos, amount) {
 
   state.bids[fromPos] = passing ? 0 : amount;
 
-  // Count who is still active
-  const active = POSITIONS.filter(p => state.bids[p] === null || state.bids[p] > 0);
-
-  // Stick the dealer: if everyone else has passed, dealer MUST bid
+  // Stick the dealer: if everyone else has passed and dealer hasn't bid yet,
+  // dealer MUST bid (becomes forced bidder)
   const allExceptDealer = POSITIONS.filter(p => p !== state.dealer);
-  const dealerBidded    = state.bids[state.dealer] !== null;
+  const dealerNoBid     = state.bids[state.dealer] === null;
   const allOthersPassed = allExceptDealer.every(p => state.bids[p] === 0);
 
-  if (!dealerBidded && allOthersPassed) {
-    // Dealer is stuck — they must bid at least MIN_BID (or highBid+1 if higher)
+  if (allOthersPassed && dealerNoBid) {
     state.currentBidder = state.dealer;
-    state.bids[state.dealer] = null; // reset so dealer gets their prompt
     return {
       ok: true,
       log: `${fromPos} passes. Dealer (${state.dealer}) is stuck — must bid.`,
@@ -100,9 +106,10 @@ function processBid(state, fromPos, amount) {
     };
   }
 
-  // Is bidding over? (only 1 active bidder, or all have acted)
-  const stillActive = POSITIONS.filter(p => state.bids[p] === null || (state.bids[p] !== null && state.bids[p] > 0));
-  if (stillActive.length <= 1 || POSITIONS.every(p => state.bids[p] !== null)) {
+  // Bidding continues until only ONE player hasn't passed.
+  // A player is "still in" if they haven't passed (bids[p] !== 0).
+  const stillIn = POSITIONS.filter(p => state.bids[p] !== 0);
+  if (stillIn.length === 1 && state.bids[stillIn[0]] > 0) {
     state.phase = 'passing';
     return {
       ok: true,
@@ -111,7 +118,7 @@ function processBid(state, fromPos, amount) {
     };
   }
 
-  // Advance to next bidder who hasn't passed
+  // Advance to next active bidder (skip those who passed)
   let next = leftOf(fromPos);
   while (state.bids[next] === 0) next = leftOf(next);
   state.currentBidder = next;
