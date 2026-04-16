@@ -151,6 +151,19 @@ input[type=text]:focus { border-color: var(--gold); }
   border: 1px solid var(--border-gold);
 }
 .btn-secondary:hover { background: var(--felt-mid); }
+.btn-start-game {
+  background: #2a8a4a; color: #fff;
+  border: 2px solid #3aba6a;
+  font-size: 1.2rem; padding: 14px 32px;
+  border-radius: 8px; width: 100%;
+  text-align: center; margin-top: 0.5rem;
+  animation: startPulse 2s ease-in-out infinite;
+}
+.btn-start-game:hover { background: #35a85a; box-shadow: 0 4px 20px rgba(50,180,90,0.4); }
+@keyframes startPulse {
+  0%,100% { box-shadow: 0 0 0 0 rgba(50,180,90,0); }
+  50%     { box-shadow: 0 0 0 8px rgba(50,180,90,0.3); }
+}
 .btn-sm { font-size: 0.82rem; padding: 0.4rem 0.9rem; }
 .btn-danger { background: #7a1a1a; color: var(--cream); }
 .btn-danger:hover { background: #9a2020; }
@@ -303,9 +316,9 @@ input[type=text]:focus { border-color: var(--gold); }
 }
 
 .seat-video-wrap {
-  width: 110px; height: 82px;
-  border-radius: 3px;
-  border: 1px solid var(--border-gold);
+  width: 160px; height: 120px;
+  border-radius: 6px;
+  border: 1.5px solid var(--border-gold);
   overflow: hidden; position: relative;
   background: #000; flex-shrink: 0;
 }
@@ -672,7 +685,7 @@ input[type=text]:focus { border-color: var(--gold); }
   #meld-modal-content, #review-content { grid-template-columns: 1fr; }
   .card { width: 46px; height: 70px; }
   .card .center-suit { font-size: 1.2rem; }
-  .seat-video-wrap { width: 90px; height: 68px; }
+  .seat-video-wrap { width: 120px; height: 90px; }
 }
 
 /* ════════════════════════════════════════════
@@ -780,16 +793,43 @@ input[type=text]:focus { border-color: var(--gold); }
   transform: rotate(180deg);
 }
 
-/* Face card center decoration */
-.ac-face-icon {
-  position: absolute;
-  top: 50%; left: 50%;
-  transform: translate(-50%, -50%);
-  font-size: 2.6rem;
-  opacity: 0.18;
-  line-height: 1;
+/* ── Card center content ── */
+
+/* Ace: large center pip */
+.ac-ace-pip {
+  position: absolute; inset: 0;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 2.4rem; line-height: 1;
 }
-.anim-card-front.red .ac-face-icon { color: var(--red); }
+
+/* Number cards (9, 10): pip grid */
+.ac-pips {
+  position: absolute;
+  top: 22px; bottom: 22px; left: 8px; right: 8px;
+  display: flex; flex-wrap: wrap;
+  align-content: space-between; justify-content: space-around;
+  font-size: 0.85rem; line-height: 1;
+  word-spacing: 2px;
+}
+
+/* Face cards: letter + decoration */
+.ac-face-body {
+  position: absolute; inset: 0;
+  display: flex; flex-direction: column;
+  align-items: center; justify-content: center;
+  gap: 2px;
+}
+.ac-face-letter {
+  font-family: 'Playfair Display', serif;
+  font-size: 1.8rem; font-weight: 900;
+  line-height: 1; opacity: 0.7;
+}
+.ac-face-decor {
+  font-size: 1.4rem; opacity: 0.35; line-height: 1;
+}
+.anim-card-front.face-card {
+  background: linear-gradient(170deg, #ffffff 20%, #f8f3e6 80%);
+}
 
 /* ── Card back pattern ── */
 .ac-back-pattern {

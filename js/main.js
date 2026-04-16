@@ -176,9 +176,23 @@ function checkStartHint() {
   const btn    = document.getElementById('start-btn');
   const hint   = document.getElementById('start-hint');
   if (!btn) return;
-  btn.style.display  = filled >= 2 ? 'inline-flex' : 'none';  // allow 2-4 for testing
-  if (hint) hint.style.display = filled < 4 ? 'block' : 'none';
-  if (hint) hint.textContent   = `${filled}/4 players · ${filled>=2?'Ready to start (or wait for all 4)':'Need at least 2 to start'}`;
+  btn.style.display  = filled >= 2 ? 'block' : 'none';
+  if (hint) hint.style.display = 'block';
+  if (hint) {
+    if (filled === 4) {
+      hint.textContent = '4/4 players — ready to play!';
+      hint.style.color = '#7aff9a';
+      hint.style.fontSize = '0.85rem';
+    } else if (filled >= 2) {
+      hint.textContent = `${filled}/4 players · Can start now or wait for all 4`;
+      hint.style.color = '';
+      hint.style.fontSize = '';
+    } else {
+      hint.textContent = `${filled}/4 players · Need at least 2 to start`;
+      hint.style.color = '';
+      hint.style.fontSize = '';
+    }
+  }
 }
 
 function setStatus(panel, html) {
