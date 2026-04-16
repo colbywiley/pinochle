@@ -99,7 +99,7 @@
       <div><strong>Deck</strong> Single 48-card (A 10 K Q J 9 × 4 suits)</div>
       <div><strong>Goal</strong> First team to 150 points wins</div>
       <div><strong>Bidding</strong> Min 25, bid by 1. Stick the dealer.</div>
-      <div><strong>Pass</strong> Declarer passes 3 cards blind; partner discards 3</div>
+      <div><strong>Pass</strong> Declarer &amp; partner each pass 3 cards blind (no peek)</div>
       <div><strong>Must Head</strong> You must beat the current winning card if able</div>
       <div><strong>Bidder Goes Out</strong> Bid team wins tie-breaker at 150</div>
       <div><strong>Review</strong> After each round, see all 4 original hands</div>
@@ -198,18 +198,11 @@
       <div id="meld-rows"></div>
     </div>
 
-    <!-- PASS PANEL (declarer) -->
+    <!-- PASS PANEL (declarer AND partner — simultaneous no-peek exchange) -->
     <div id="pass-panel" style="display:none">
-      <div class="pass-title">Select 3 cards to pass to partner</div>
+      <div class="pass-title">Pick 3 cards to pass</div>
       <div id="pass-selected-display"></div>
       <button class="btn btn-sm" id="pass-confirm-btn" onclick="confirmPass()" disabled>Pass 3 Cards →</button>
-    </div>
-
-    <!-- DISCARD PANEL (partner after receiving) -->
-    <div id="discard-panel" style="display:none">
-      <div class="pass-title">Partner passed you 3 cards. Discard 3.</div>
-      <div id="discard-selected-display"></div>
-      <button class="btn btn-sm" id="discard-confirm-btn" onclick="confirmDiscard()" disabled>Discard 3 →</button>
     </div>
 
     <!-- SOLO MODE SEAT SWITCHER -->

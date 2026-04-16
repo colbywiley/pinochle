@@ -4,8 +4,8 @@
 //   • Single 48-card deck, goal 150
 //   • Min bid 25, bid by 1
 //   • Stick the dealer (dealer must bid if all pass)
-//   • Declarer passes 3 blind to partner
-//   • Partner sees 3 passed cards, discards 3 (no peek before)
+//   • Declarer names trump, then declarer & partner each pass 3 cards
+//     to each other simultaneously (no peek)
 //   • Must head trick (beat current winner if able)
 //   • Bidder goes out (bid team wins tiebreaker)
 //   • Last trick = 1 point bonus
@@ -24,7 +24,7 @@ function rightOf(pos)   { return POSITIONS[(POSITIONS.indexOf(pos)+3)%4]; }
 function newRound(prevState) {
   const dealer = prevState ? leftOf(prevState.dealer) : 'south';
   return {
-    phase:        'bidding',   // bidding|passing|discarding|meld|playing|round_over
+    phase:        'bidding',   // bidding|naming_trump|passing|meld|playing|round_over
     dealer,
     hands:        { south:[], west:[], north:[], east:[] },
     dealtHands:   { south:[], west:[], north:[], east:[] }, // pristine copy for review
@@ -34,6 +34,7 @@ function newRound(prevState) {
     highBidder:   null,
     trump:        null,
     passedCards:  [],   // 3 cards sent from declarer to partner
+    pendingPass:  {},   // { pos: cards[] } — cards selected to pass, awaiting partner's pass
     trickLeader:  null, // set after trump named
     currentTrick: [],
     trickLedSuit: null,
@@ -130,57 +131,85 @@ function processBid(state, fromPos, amount) {
   };
 }
 
-// ── PASSING ──────────────────────────────────────────────────────────────────
+// ── PASSING (simultaneous, no-peek) ──────────────────────────────────────────
+//
+//  Both the declarer and their partner each secretly pick 3 cards from their
+//  own hand to pass to the other. Neither sees the other's choice. When both
+//  have submitted, the cards are exchanged atomically and meld is scored.
+//
 
 /**
- * Declarer passes 3 cards to partner.
+ * Record a player's 3-card pass selection. Exchange happens when both the
+ * declarer and partner have submitted.
  * cards = array of {r,s} card objects
  */
 function processPass(state, fromPos, cards) {
-  if (state.phase !== 'passing')        return { ok:false, error:'Not passing phase' };
-  if (fromPos !== state.highBidder)     return { ok:false, error:'Only the declarer passes cards' };
-  if (cards.length !== 3)               return { ok:false, error:'Must pass exactly 3 cards' };
+  if (state.phase !== 'passing') return { ok:false, error:'Not passing phase' };
 
-  // Remove passed cards from declarer's hand
+  const bidder  = state.highBidder;
+  const partner = partnerOf(bidder);
+
+  // Only the declarer and partner pass cards
+  if (fromPos !== bidder && fromPos !== partner) {
+    return { ok:false, error:'Only the declarer and partner pass cards' };
+  }
+  if (cards.length !== 3) {
+    return { ok:false, error:'Must pass exactly 3 cards' };
+  }
+  if (state.pendingPass?.[fromPos]) {
+    return { ok:false, error:'You have already passed your cards' };
+  }
+
+  // Validate all cards are in hand
+  for (const pc of cards) {
+    if (!state.hands[fromPos].find(c => sameCard(c, pc))) {
+      return { ok:false, error:'Card not in hand' };
+    }
+  }
+
+  // Remove cards from sender's hand — they're in pending state now
   for (const pc of cards) {
     const idx = state.hands[fromPos].findIndex(c => sameCard(c, pc));
-    if (idx === -1) return { ok:false, error:'Card not in hand' };
     state.hands[fromPos].splice(idx, 1);
   }
 
-  // Add to partner's hand
-  const partner = partnerOf(fromPos);
-  for (const pc of cards) state.hands[partner].push(pc);
-  state.passedCards = cards;
-  state.phase = 'discarding'; // partner must now discard 3
+  if (!state.pendingPass) state.pendingPass = {};
+  state.pendingPass[fromPos] = cards;
 
-  return { ok:true, log:`${fromPos} passes 3 cards to ${partner}` };
+  // If both have submitted, perform the exchange
+  if (state.pendingPass[bidder] && state.pendingPass[partner]) {
+    // Swap: each receives the other's chosen 3 cards
+    for (const pc of state.pendingPass[bidder])  state.hands[partner].push(pc);
+    for (const pc of state.pendingPass[partner]) state.hands[bidder].push(pc);
+
+    // Record the final exchange for any later reference; clear pending
+    state.passedCards  = {
+      [bidder]:  [...state.pendingPass[bidder]],
+      [partner]: [...state.pendingPass[partner]],
+    };
+    state.pendingPass = {};
+
+    // Hands are final — calculate meld for all players
+    for (const p of POSITIONS) {
+      const m = calcMeld(state.hands[p], state.trump);
+      state.meld[p]      = m.score;
+      state.meldBreak[p] = m.breakdown;
+    }
+
+    state.phase = 'meld';
+    return { ok:true, log:`Cards exchanged — ${bidder} ↔ ${partner}`, exchangeComplete: true };
+  }
+
+  const otherPos = fromPos === bidder ? partner : bidder;
+  return { ok:true, log:`${fromPos} passes 3 cards. Waiting for ${otherPos}…` };
 }
 
 /**
- * Partner (receiver) discards 3 cards.
- * Hands are now final — calculate meld for all players.
+ * Legacy stub — the discarding phase was replaced by the simultaneous pass
+ * above. Kept so any stray call is cleanly rejected.
  */
 function processDiscard(state, fromPos, cards) {
-  if (state.phase !== 'discarding')                   return { ok:false, error:'Not discarding phase' };
-  if (fromPos !== partnerOf(state.highBidder))        return { ok:false, error:'Only the partner discards' };
-  if (cards.length !== 3)                             return { ok:false, error:'Must discard exactly 3' };
-
-  for (const pc of cards) {
-    const idx = state.hands[fromPos].findIndex(c => sameCard(c, pc));
-    if (idx === -1) return { ok:false, error:'Card not in hand' };
-    state.hands[fromPos].splice(idx, 1);
-  }
-
-  // Hands are final — calculate meld for everyone using the already-named trump
-  for (const p of POSITIONS) {
-    const m = calcMeld(state.hands[p], state.trump);
-    state.meld[p]      = m.score;
-    state.meldBreak[p] = m.breakdown;
-  }
-
-  state.phase = 'meld';
-  return { ok:true, log:`${fromPos} discards 3 cards` };
+  return { ok:false, error:'Discarding is no longer a separate phase — use pass_cards' };
 }
 
 // ── TRUMP ─────────────────────────────────────────────────────────────────────

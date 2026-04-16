@@ -35,21 +35,17 @@ function onHostReceive(msg, fromPos) {
       result = processPass(G, fromPos, msg.cards);
       if (!result.ok) { sendError(fromPos, result.error); return; }
       log(result.log);
-      transitionToDiscard();
-      break;
-
-    case 'discard_cards':
-      result = processDiscard(G, fromPos, msg.cards);
-      if (!result.ok) { sendError(fromPos, result.error); return; }
-      log(result.log);
-      // Hands are final, meld was calculated — show meld modal, then auto-advance
       broadcastGameState();
-      setTimeout(() => {
-        if (G && G.phase === 'meld') {
-          startPlaying(G);
-          broadcastGameState();
-        }
-      }, 6000);
+      // Exchange is complete once BOTH declarer and partner have passed.
+      // That's when meld is scored and we queue the advance to the play phase.
+      if (result.exchangeComplete) {
+        setTimeout(() => {
+          if (G && G.phase === 'meld') {
+            startPlaying(G);
+            broadcastGameState();
+          }
+        }, 6000);
+      }
       break;
 
     case 'play_card':
@@ -93,17 +89,6 @@ function onHostReceive(msg, fromPos) {
 }
 
 // ── State transitions ─────────────────────────────────────────────────────────
-
-function transitionToPassing() {
-  G.phase = 'passing';
-  broadcastGameState();
-}
-
-function transitionToDiscard() {
-  // Partner now sees 3 received cards, must discard 3
-  G.phase = 'discarding';
-  broadcastGameState();
-}
 
 function transitionToNamingTrump() {
   G.phase = 'naming_trump';

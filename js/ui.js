@@ -25,7 +25,6 @@ let lastTrickKeys  = [];
 let animBusy       = false;
 
 let passSelectedCards = [];
-let discardSelected   = [];
 
 // ── Top-level state application ───────────────────────────────
 
@@ -113,7 +112,6 @@ async function applyGameState(state) {
 async function doNewDeal() {
   animBusy = true;
   passSelectedCards = [];
-  discardSelected   = [];
   clearAllCards();
   await wait(250);
   await animShuffle();
@@ -159,10 +157,16 @@ function refreshAllHands() {
 
 function soloWhoseTurn() {
   if (!G) return null;
-  if (G.phase === 'bidding') return G.currentBidder;
-  if (G.phase === 'passing') return G.highBidder;
-  if (G.phase === 'discarding') return partnerOf(G.highBidder);
+  if (G.phase === 'bidding')      return G.currentBidder;
   if (G.phase === 'naming_trump') return G.highBidder;
+  if (G.phase === 'passing') {
+    // Declarer and partner pass simultaneously — pick whichever hasn't yet
+    const bidder  = G.highBidder;
+    const partner = partnerOf(bidder);
+    if (!G.pendingPass?.[bidder])  return bidder;
+    if (!G.pendingPass?.[partner]) return partner;
+    return null; // both done — waiting for exchange→meld transition
+  }
   if (G.phase === 'playing') {
     if (!G.currentTrick?.length) return G.trickLeader;
     return leftOf(G.currentTrick[G.currentTrick.length-1].seat);
@@ -181,18 +185,21 @@ function refreshMyHandInteraction(hand) {
   sortHand(hand, G.trump);
   if (!hand.length) return;
 
-  const isPassPhase    = G.phase === 'passing'    && G.highBidder === myPos;
-  const isDiscardPhase = G.phase === 'discarding' && partnerOf(G.highBidder) === myPos;
-  const myTurn         = G.phase === 'playing'    && isMyTurn();
+  // In the new simultaneous-pass model, EITHER the declarer or the partner
+  // can be selecting their 3 cards — as long as they haven't already passed.
+  const bidder  = G.highBidder;
+  const partner = bidder ? partnerOf(bidder) : null;
+  const isPassPhase = G.phase === 'passing'
+                      && (myPos === bidder || myPos === partner)
+                      && !G.pendingPass?.[myPos];
+  const myTurn      = G.phase === 'playing' && isMyTurn();
 
   let legalKeys = [];
   if (myTurn) legalKeys = legalPlays(G, myPos).map(c => cardKey(c));
 
-  const selKeys = isPassPhase    ? passSelectedCards.map(c => cardKey(c))
-                : isDiscardPhase ? discardSelected.map(c => cardKey(c))
-                : [];
+  const selKeys = isPassPhase ? passSelectedCards.map(c => cardKey(c)) : [];
 
-  const clickable = isPassPhase || isDiscardPhase || myTurn;
+  const clickable = isPassPhase || myTurn;
 
   const myDisp = absToDisplay(myPos);
   rebuildHandFan(myDisp, hand, {
@@ -200,8 +207,7 @@ function refreshMyHandInteraction(hand) {
     legalKeys: myTurn ? legalKeys : (clickable ? hand.map(c => cardKey(c)) : []),
     clickable,
     onCardClick: card => {
-      if (isPassPhase)    { togglePassSelect(card);    return; }
-      if (isDiscardPhase) { toggleDiscardSelect(card); return; }
+      if (isPassPhase) { togglePassSelect(card); return; }
       if (myTurn && legalKeys.includes(cardKey(card))) {
         sendToHost({ action: 'play_card', card });
       }
@@ -221,8 +227,8 @@ function getLegalPlaysLocal() { return legalPlays(G, myPos); }
 
 function renderTopBar() {
   const PHASE_LABELS = {
-    bidding:'Bidding', passing:'Passing', discarding:'Partner Discards',
-    naming_trump:'Name Trump', meld:'Meld', playing:'Playing', round_over:'Round Over'
+    bidding:'Bidding', naming_trump:'Name Trump', passing:'Passing',
+    meld:'Meld', playing:'Playing', round_over:'Round Over'
   };
   document.getElementById('phase-label').textContent = PHASE_LABELS[G.phase] || G.phase;
 
@@ -261,12 +267,18 @@ function renderTopBar() {
 // ── SEATS ────────────────────────────────────────────────────
 
 function renderSeats() {
-  // Determine whose turn it is for the active-turn indicator
+  // Determine whose turn it is for the active-turn indicator.
+  // During passing, both declarer and partner are "active" (simultaneous) —
+  // we highlight whichever hasn't submitted yet so the indicator still moves.
   let activeSeat = null;
-  if (G.phase === 'bidding')      activeSeat = G.currentBidder;
-  else if (G.phase === 'passing') activeSeat = G.highBidder;
-  else if (G.phase === 'discarding') activeSeat = partnerOf(G.highBidder);
+  if (G.phase === 'bidding')           activeSeat = G.currentBidder;
   else if (G.phase === 'naming_trump') activeSeat = G.highBidder;
+  else if (G.phase === 'passing') {
+    const bidder  = G.highBidder;
+    const partner = partnerOf(bidder);
+    if (!G.pendingPass?.[bidder])       activeSeat = bidder;
+    else if (!G.pendingPass?.[partner]) activeSeat = partner;
+  }
   else if (G.phase === 'playing') {
     if (!G.currentTrick?.length) activeSeat = G.trickLeader;
     else activeSeat = leftOf(G.currentTrick[G.currentTrick.length-1].seat);
@@ -389,24 +401,39 @@ function renderActionPanel() {
 
 function renderPassPanel() {
   const p = document.getElementById('pass-panel');
-  if (G.phase === 'passing' && G.highBidder === myPos) {
+  if (!p) return;
+
+  const bidder  = G.highBidder;
+  const partner = bidder ? partnerOf(bidder) : null;
+  const isPasser   = myPos === bidder || myPos === partner;
+  const haveIPassed = !!G.pendingPass?.[myPos];
+  const showPanel   = G.phase === 'passing' && isPasser && !haveIPassed;
+
+  if (showPanel) {
     p.style.display = 'flex';
+
+    const title = p.querySelector('.pass-title');
+    if (title) {
+      const partnerLabel = myPos === bidder
+        ? `your partner (${partner})`
+        : `the declarer (${bidder})`;
+      title.textContent = `Pick 3 cards to pass to ${partnerLabel}`;
+    }
+
     document.getElementById('pass-selected-display').textContent =
-      passSelectedCards.length===0 ? 'Click 3 cards in your hand to pass' :
-      passSelectedCards.map(c=>c.r+SUIT_SYM[c.s]).join(' · ');
+      passSelectedCards.length === 0 ? 'Click 3 cards in your hand to pass' :
+      passSelectedCards.map(c => c.r + SUIT_SYM[c.s]).join(' · ');
     document.getElementById('pass-confirm-btn').disabled = passSelectedCards.length !== 3;
-  } else p.style.display = 'none';
+  } else {
+    p.style.display = 'none';
+  }
 }
 
+// Discard phase no longer exists — the pass is now a simultaneous exchange.
+// This stub keeps any stale callers from crashing.
 function renderDiscardPanel() {
   const p = document.getElementById('discard-panel');
-  if (G.phase === 'discarding' && partnerOf(G.highBidder) === myPos) {
-    p.style.display = 'flex';
-    document.getElementById('discard-selected-display').textContent =
-      discardSelected.length===0 ? 'Partner passed you 3. Click 3 to discard.' :
-      discardSelected.map(c=>c.r+SUIT_SYM[c.s]).join(' · ');
-    document.getElementById('discard-confirm-btn').disabled = discardSelected.length !== 3;
-  } else p.style.display = 'none';
+  if (p) p.style.display = 'none';
 }
 
 function togglePassSelect(card) {
@@ -416,30 +443,30 @@ function togglePassSelect(card) {
   refreshMyHandInteraction(); renderPassPanel();
 }
 
-function toggleDiscardSelect(card) {
-  const idx = discardSelected.findIndex(c=>sameCard(c,card));
-  if (idx >= 0) discardSelected.splice(idx, 1);
-  else if (discardSelected.length < 3) discardSelected.push(card);
-  refreshMyHandInteraction(); renderDiscardPanel();
-}
-
 async function confirmPass() {
   if (passSelectedCards.length !== 3) return;
   const cards = [...passSelectedCards];
   passSelectedCards = [];
-  const toDisp = absToDisplay(partnerOf(myPos));
-  const fromDisp = absToDisplay(myPos);
-  await animPassCards(cards, fromDisp, toDisp);
-  sendToHost({ action:'pass_cards', cards });
-}
 
-async function confirmDiscard() {
-  if (discardSelected.length !== 3) return;
-  const cards = [...discardSelected];
-  discardSelected = [];
+  const toDisp   = absToDisplay(partnerOf(myPos));
   const fromDisp = absToDisplay(myPos);
-  await animDiscardCards(cards, fromDisp);
-  sendToHost({ action:'discard_cards', cards });
+
+  // Fly the 3 selected cards toward partner (face-down for no-peek feel).
+  await animPassCards(cards, fromDisp, toDisp);
+
+  // Remove them from the DOM — they're now in pendingPass server-side.
+  // When the exchange completes, refreshAllHands will re-create them in
+  // their new owner's fan.
+  for (const c of cards) {
+    const key = cardKey(c);
+    const entry = CARD_REGISTRY[key];
+    if (entry) {
+      entry.el.remove();
+      delete CARD_REGISTRY[key];
+    }
+  }
+
+  sendToHost({ action:'pass_cards', cards });
 }
 
 // ── MELD SIDEBAR ─────────────────────────────────────────────
