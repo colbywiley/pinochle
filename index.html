@@ -72,6 +72,26 @@
     <span class="solo-hint">No network needed · See all cards · Click each seat's turn</span>
   </div>
 
+  <!-- SOLO START PANEL (appears after clicking Solo Test Mode) -->
+  <div class="panel" id="solo-start-panel" style="display:none; max-width:420px; width:100%">
+    <div class="panel-header">
+      <span class="panel-num">♣</span>
+      <h2>Solo Test Mode</h2>
+    </div>
+    <div class="status-line" style="margin-bottom:0.5rem">
+      All 4 seats filled · You control whichever seat's turn it is
+    </div>
+    <div class="lobby-player-grid">
+      <div class="lobby-player-slot"><span class="slot-pos">south</span><span class="slot-name">South</span></div>
+      <div class="lobby-player-slot"><span class="slot-pos">west</span><span class="slot-name">West</span></div>
+      <div class="lobby-player-slot"><span class="slot-pos">north</span><span class="slot-name">North</span></div>
+      <div class="lobby-player-slot"><span class="slot-pos">east</span><span class="slot-name">East</span></div>
+    </div>
+    <button class="btn btn-start-game" onclick="startSoloGame()">
+      Deal the Cards &amp; Start Game
+    </button>
+  </div>
+
   <!-- rules summary -->
   <details class="rules-accordion">
     <summary>Modern Rules Summary</summary>

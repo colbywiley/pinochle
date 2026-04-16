@@ -69,8 +69,18 @@ function dealCards(state) {
 function processBid(state, fromPos, amount) {
   if (state.phase !== 'bidding') return { ok:false, error:'Not bidding phase' };
   if (state.currentBidder !== fromPos) return { ok:false, error:'Not your turn to bid' };
+  // Once you pass, you're out
+  if (state.bids[fromPos] === 0) return { ok:false, error:'You have already passed' };
 
   const passing = (amount === 0);
+
+  // Stuck dealer can't pass: all others passed and dealer hasn't bid yet
+  if (passing && fromPos === state.dealer) {
+    const others = POSITIONS.filter(p => p !== state.dealer);
+    if (others.every(p => state.bids[p] === 0) && state.highBid === 0) {
+      return { ok:false, error:`Dealer is stuck — must bid at least ${MIN_BID}` };
+    }
+  }
 
   if (!passing) {
     const minAllowed = Math.max(MIN_BID, state.highBid + 1);
@@ -81,18 +91,14 @@ function processBid(state, fromPos, amount) {
 
   state.bids[fromPos] = passing ? 0 : amount;
 
-  // Count who is still active
-  const active = POSITIONS.filter(p => state.bids[p] === null || state.bids[p] > 0);
-
-  // Stick the dealer: if everyone else has passed, dealer MUST bid
+  // Stick the dealer: if everyone else has passed and dealer hasn't bid yet,
+  // dealer MUST bid (becomes forced bidder)
   const allExceptDealer = POSITIONS.filter(p => p !== state.dealer);
-  const dealerBidded    = state.bids[state.dealer] !== null;
+  const dealerNoBid     = state.bids[state.dealer] === null;
   const allOthersPassed = allExceptDealer.every(p => state.bids[p] === 0);
 
-  if (!dealerBidded && allOthersPassed) {
-    // Dealer is stuck — they must bid at least MIN_BID (or highBid+1 if higher)
+  if (allOthersPassed && dealerNoBid) {
     state.currentBidder = state.dealer;
-    state.bids[state.dealer] = null; // reset so dealer gets their prompt
     return {
       ok: true,
       log: `${fromPos} passes. Dealer (${state.dealer}) is stuck — must bid.`,
@@ -100,10 +106,12 @@ function processBid(state, fromPos, amount) {
     };
   }
 
-  // Is bidding over? (only 1 active bidder, or all have acted)
-  const stillActive = POSITIONS.filter(p => state.bids[p] === null || (state.bids[p] !== null && state.bids[p] > 0));
-  if (stillActive.length <= 1 || POSITIONS.every(p => state.bids[p] !== null)) {
-    state.phase = 'passing';
+  // Bidding continues until only ONE player hasn't passed.
+  // A player is "still in" if they haven't passed (bids[p] !== 0).
+  const stillIn = POSITIONS.filter(p => state.bids[p] !== 0);
+  if (stillIn.length === 1 && state.bids[stillIn[0]] > 0) {
+    // Bidder wins — next they name trump, then pass cards
+    state.phase = 'naming_trump';
     return {
       ok: true,
       log: `${passing ? fromPos+' passes' : fromPos+' bids '+amount}. ${state.highBidder} wins bid at ${state.highBid}.`,
@@ -111,7 +119,7 @@ function processBid(state, fromPos, amount) {
     };
   }
 
-  // Advance to next bidder who hasn't passed
+  // Advance to next active bidder (skip those who passed)
   let next = leftOf(fromPos);
   while (state.bids[next] === 0) next = leftOf(next);
   state.currentBidder = next;
@@ -151,6 +159,7 @@ function processPass(state, fromPos, cards) {
 
 /**
  * Partner (receiver) discards 3 cards.
+ * Hands are now final — calculate meld for all players.
  */
 function processDiscard(state, fromPos, cards) {
   if (state.phase !== 'discarding')                   return { ok:false, error:'Not discarding phase' };
@@ -163,7 +172,14 @@ function processDiscard(state, fromPos, cards) {
     state.hands[fromPos].splice(idx, 1);
   }
 
-  state.phase = 'naming_trump';
+  // Hands are final — calculate meld for everyone using the already-named trump
+  for (const p of POSITIONS) {
+    const m = calcMeld(state.hands[p], state.trump);
+    state.meld[p]      = m.score;
+    state.meldBreak[p] = m.breakdown;
+  }
+
+  state.phase = 'meld';
   return { ok:true, log:`${fromPos} discards 3 cards` };
 }
 
@@ -175,14 +191,10 @@ function processTrump(state, fromPos, suit) {
 
   state.trump       = suit;
   state.trickLeader = leftOf(state.dealer); // leader is left of dealer
-  state.phase       = 'meld';
+  // Trump is named first, then declarer passes 3 cards to partner
+  state.phase       = 'passing';
 
-  // Calc meld for all players
-  for (const p of POSITIONS) {
-    const m = calcMeld(state.hands[p], suit);
-    state.meld[p]      = m.score;
-    state.meldBreak[p] = m.breakdown;
-  }
+  // Meld is calculated later (after pass+discard), when hands are final
 
   return { ok:true, log:`${fromPos} names ${SUIT_NAME[suit]} as trump` };
 }
