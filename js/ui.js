@@ -95,6 +95,13 @@ async function applyGameState(state) {
   prevTrickLen = trickLen;
   prevPhase    = G.phase;
 
+  // Solo mode: always refresh hands to ensure correct interactivity
+  // after seat switches and phase changes (deal/trump/sweep paths handle
+  // their own refresh, but seat switches and phase transitions don't)
+  if (typeof soloMode !== 'undefined' && soloMode && !animBusy) {
+    refreshAllHands();
+  }
+
   checkModals();
 
   // Solo mode: update turn indicator after every state change
@@ -105,6 +112,8 @@ async function applyGameState(state) {
 
 async function doNewDeal() {
   animBusy = true;
+  passSelectedCards = [];
+  discardSelected   = [];
   clearAllCards();
   await wait(250);
   await animShuffle();
