@@ -101,12 +101,15 @@ function getTrickSlotRect(dispPos) {
   return { x: r.left - t.left, y: r.top - t.top, w: r.width, h: r.height };
 }
 
+// Face card decorative letters
+const FACE_LETTERS = { J: 'J', Q: 'Q', K: 'K' };
+const FACE_DECOR   = { J: '\u2694', Q: '\u2655', K: '\u2654' }; // swords, queen, king
+
 function createCardEl(card, faceDown = false) {
   const key = cardKey(card);
   const isRed = RED_SUITS.has(card.s);
   const sym = SUIT_SYM[card.s];
   const isFace = card.r === 'J' || card.r === 'Q' || card.r === 'K';
-  const faceIcons = { J: '\u265E', Q: '\u265B', K: '\u265A' }; // knight, queen, king chess
 
   const wrapper = document.createElement('div');
   wrapper.className = 'anim-card' + (isRed ? ' red' : '');
@@ -123,12 +126,29 @@ function createCardEl(card, faceDown = false) {
   // Front face
   const front = document.createElement('div');
   front.className = 'anim-card-face anim-card-front' + (isRed ? ' red' : '') + (isFace ? ' face-card' : '');
-  const centerArt = isFace
-    ? `<div class="ac-face-icon">${faceIcons[card.r]}</div>`
-    : '';
+
+  // Center content: pips for number cards, decorative for face cards
+  let centerHTML = '';
+  if (isFace) {
+    centerHTML = `<div class="ac-face-body">
+      <div class="ac-face-letter">${card.r}</div>
+      <div class="ac-face-decor">${FACE_DECOR[card.r]}</div>
+    </div>`;
+  } else if (card.r === 'A') {
+    centerHTML = `<div class="ac-ace-pip">${sym}</div>`;
+  } else {
+    // Number cards: show pip count in center
+    const count = card.r === '10' ? 10 : parseInt(card.r) || 0;
+    if (count === 9) {
+      centerHTML = `<div class="ac-pips">${(sym + ' ').repeat(9).trim()}</div>`;
+    } else if (count === 10) {
+      centerHTML = `<div class="ac-pips">${(sym + ' ').repeat(10).trim()}</div>`;
+    }
+  }
+
   front.innerHTML = `
     <div class="ac-corner"><span class="ac-rank">${card.r}</span><span class="ac-suit">${sym}</span></div>
-    ${centerArt}
+    ${centerHTML}
     <div class="ac-corner ac-corner-bot"><span class="ac-rank">${card.r}</span><span class="ac-suit">${sym}</span></div>`;
 
   // Back face
@@ -486,7 +506,9 @@ function rebuildHandFan(dispPos, cardDataList, opts = {}) {
       zIndex: 30 + i,
     });
 
-    if (dispPos === 'south') {
+    // In solo mode, any seat can be interactive; in multiplayer, only south
+    const isActiveSeat = (typeof soloMode !== 'undefined' && soloMode) ? clickable : (dispPos === 'south');
+    if (isActiveSeat) {
       newEl.style.pointerEvents = 'auto';
       const isLegal = legalKeys.length === 0 || legalKeys.includes(key);
       newEl.classList.toggle('disabled-anim', !isLegal || !clickable);

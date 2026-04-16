@@ -54,9 +54,28 @@ function onHostReceive(msg, fromPos) {
       result = processPlayCard(G, fromPos, msg.card);
       if (!result.ok) { sendError(fromPos, result.error); return; }
       log(result.log);
-      if (result.roundOver) {
-        broadcastGameState();
-        checkAndBroadcastWinner();
+      if (result.trickDone) {
+        // Broadcast the 4-card trick state BEFORE resolving so UI can animate
+        // Store trick data before resolve clears it
+        const trickSnapshot = result.trickSnapshot;
+        if (trickSnapshot) {
+          // Temporarily restore the 4-card trick for broadcast
+          const savedTrick = G.currentTrick;
+          const savedLedSuit = G.trickLedSuit;
+          G.currentTrick = trickSnapshot.cards;
+          G.trickLedSuit = trickSnapshot.ledSuit;
+          broadcastGameState();
+          G.currentTrick = savedTrick;
+          G.trickLedSuit = savedLedSuit;
+          // After a delay, broadcast the resolved state
+          setTimeout(() => {
+            broadcastGameState();
+            if (result.roundOver) checkAndBroadcastWinner();
+          }, 1800);
+        } else {
+          broadcastGameState();
+          if (result.roundOver) checkAndBroadcastWinner();
+        }
       } else {
         broadcastGameState();
       }
