@@ -110,7 +110,8 @@ function processBid(state, fromPos, amount) {
   // A player is "still in" if they haven't passed (bids[p] !== 0).
   const stillIn = POSITIONS.filter(p => state.bids[p] !== 0);
   if (stillIn.length === 1 && state.bids[stillIn[0]] > 0) {
-    state.phase = 'passing';
+    // Bidder wins — next they name trump, then pass cards
+    state.phase = 'naming_trump';
     return {
       ok: true,
       log: `${passing ? fromPos+' passes' : fromPos+' bids '+amount}. ${state.highBidder} wins bid at ${state.highBid}.`,
@@ -158,6 +159,7 @@ function processPass(state, fromPos, cards) {
 
 /**
  * Partner (receiver) discards 3 cards.
+ * Hands are now final — calculate meld for all players.
  */
 function processDiscard(state, fromPos, cards) {
   if (state.phase !== 'discarding')                   return { ok:false, error:'Not discarding phase' };
@@ -170,7 +172,14 @@ function processDiscard(state, fromPos, cards) {
     state.hands[fromPos].splice(idx, 1);
   }
 
-  state.phase = 'naming_trump';
+  // Hands are final — calculate meld for everyone using the already-named trump
+  for (const p of POSITIONS) {
+    const m = calcMeld(state.hands[p], state.trump);
+    state.meld[p]      = m.score;
+    state.meldBreak[p] = m.breakdown;
+  }
+
+  state.phase = 'meld';
   return { ok:true, log:`${fromPos} discards 3 cards` };
 }
 
@@ -182,14 +191,10 @@ function processTrump(state, fromPos, suit) {
 
   state.trump       = suit;
   state.trickLeader = leftOf(state.dealer); // leader is left of dealer
-  state.phase       = 'meld';
+  // Trump is named first, then declarer passes 3 cards to partner
+  state.phase       = 'passing';
 
-  // Calc meld for all players
-  for (const p of POSITIONS) {
-    const m = calcMeld(state.hands[p], suit);
-    state.meld[p]      = m.score;
-    state.meldBreak[p] = m.breakdown;
-  }
+  // Meld is calculated later (after pass+discard), when hands are final
 
   return { ok:true, log:`${fromPos} names ${SUIT_NAME[suit]} as trump` };
 }

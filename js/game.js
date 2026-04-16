@@ -18,8 +18,17 @@ function onHostReceive(msg, fromPos) {
       if (!result.ok) { sendError(fromPos, result.error); return; }
       log(result.log);
       if (result.stuckDealer) notifyStuck(result.stuckDealer);
-      if (result.biddingDone) transitionToPassing();
+      // Bid winner names trump first, THEN passes cards
+      if (result.biddingDone) transitionToNamingTrump();
       else broadcastGameState();
+      break;
+
+    case 'name_trump':
+      result = processTrump(G, fromPos, msg.suit);
+      if (!result.ok) { sendError(fromPos, result.error); return; }
+      log(result.log);
+      // Trump named — now declarer passes 3 cards to partner
+      broadcastGameState();
       break;
 
     case 'pass_cards':
@@ -33,15 +42,8 @@ function onHostReceive(msg, fromPos) {
       result = processDiscard(G, fromPos, msg.cards);
       if (!result.ok) { sendError(fromPos, result.error); return; }
       log(result.log);
-      transitionToNamingTrump();
-      break;
-
-    case 'name_trump':
-      result = processTrump(G, fromPos, msg.suit);
-      if (!result.ok) { sendError(fromPos, result.error); return; }
-      log(result.log);
+      // Hands are final, meld was calculated — show meld modal, then auto-advance
       broadcastGameState();
-      // After 6 seconds auto-advance to playing
       setTimeout(() => {
         if (G && G.phase === 'meld') {
           startPlaying(G);
