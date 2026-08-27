@@ -87,8 +87,10 @@ async function joinRoom() {
   });
   dataConns['host'] = conn;
   conn._peerLabel   = 'host';
+  // Wire the data handler immediately — a message can arrive before
+  // our 'open' event fires, and it must not be lost
+  wireDataConn(conn, 'host');
   conn.on('open', () => {
-    wireDataConn(conn, 'host');
     setStatus('join','Joined! Waiting for the host to start…');
   });
 }

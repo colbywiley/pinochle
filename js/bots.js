@@ -47,6 +47,8 @@ function botChooseBid(state, pos) {
                  others.every(p => state.bids[p] === 0);
   if (stuck) return MIN_BID;
 
+  if (minAllowed > 99) return 0; // engine's hard bid ceiling
+
   // Don't outbid our own partner without a strong hand
   const partnerHasBid = state.highBidder === partnerOf(pos);
   const cap = botEstimatePoints(hand) - (partnerHasBid ? 4 : 0);

@@ -358,6 +358,7 @@ input[type=text]:focus { border-color: var(--gold); }
   padding: 3px 10px; border-radius: 4px;
   letter-spacing: 0.05em;
   box-shadow: 0 2px 8px rgba(0,0,0,0.4);
+  position: relative; z-index: 46; /* above the card fans */
 }
 .bid-badge.pass { background: rgba(255,255,255,0.2); color: var(--cream-dim); }
 .bid-badge.visible { display: block; }
@@ -540,11 +541,11 @@ input[type=text]:focus { border-color: var(--gold); }
 /* ── MELD SIDEBAR ── */
 #meld-sidebar {
   position: absolute; right: 8px; top: 48px;
-  background: rgba(8,22,13,0.92);
+  background: rgba(8,22,13,0.95);
   border: 1px solid var(--border-gold);
   border-radius: 4px; padding: 10px 12px;
   width: 160px; max-height: calc(100vh - 100px); overflow-y: auto;
-  z-index: 8;
+  z-index: 46; /* above the card fans */
 }
 .sidebar-title {
   font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.12em;

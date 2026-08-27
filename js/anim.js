@@ -11,11 +11,11 @@
 //    animDeal(hands)              — deal 12 cards to each seat
 //    animPlayCard(card, fromPos)  — card flies from hand to trick slot
 //    animTrickSweep(winnerPos, trickCards) — collect trick to winner
-//    animPassCards(cards, fromPos, toPos)  — 3 cards arc to partner
-//    animReceiveCards(cards, toPos)        — 3 cards materialize in hand
-//    rebuildHandFan(pos)          — re-layout hand fan after state change
-//    getCardEl(cardKey)           — lookup live card element
-//    removeCardEl(cardKey)        — remove from DOM + registry
+//    animPassCards(cards, fromPos, toPos)  — my 3 cards arc to a seat
+//    animFlyBacks(fromPos, toPos, n)       — n card backs fly between seats
+//    rebuildHandFan(pos, cards, opts)      — re-layout a hand fan
+//    rebuildOppStubs(pos, count)  — face-down fan for a hidden hand
+//    cleanupRegistry(validKeys)   — drop card elements no longer in play
 // ══════════════════════════════════════════════════════════════
 
 'use strict';

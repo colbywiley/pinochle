@@ -149,6 +149,8 @@ function buildPlayerView(state, forPos) {
     (forPos === state.highBidder || forPos === partnerOf(state.highBidder));
   if (!involved) { v.passedIds = []; v.returnedIds = []; }
 
+  v.forPos = forPos; // lets a client recover its seat if 'welcome' was missed
+
   // Names/bot flags for rendering (strip peer ids)
   v.players = {};
   for (const p of POSITIONS) {
@@ -198,7 +200,17 @@ function maybeScheduleBot() {
     const actorNow = currentActor(G);
     if (!actorNow || !isBotSeat(actorNow)) return;
     const act = botDecide(G, actorNow);
-    if (act) onHostReceive(act, actorNow);
+    if (act) {
+      const before = G.phase + ':' + JSON.stringify(G.bids) + ':' + G.currentTrick.length;
+      onHostReceive(act, actorNow);
+      // Failsafe: a rejected bot action would otherwise freeze the game.
+      // In the bidding phase a pass is always legal for a non-stuck seat.
+      if (G && G.phase === 'bidding' && currentActor(G) === actorNow &&
+          before === G.phase + ':' + JSON.stringify(G.bids) + ':' + G.currentTrick.length &&
+          act.action === 'bid' && act.amount !== 0) {
+        onHostReceive({ action:'bid', amount: 0 }, actorNow);
+      }
+    }
   }, delay);
 }
 
@@ -229,11 +241,13 @@ function onClientReceive(msg) {
 
     case 'start_game':
       for (const [p, info] of Object.entries(msg.playerMap || {})) playerMap[p] = info;
+      if (!myPos && msg.state?.forPos) myPos = msg.state.forPos;
       enterGame();
       applyGameState(msg.state);
       break;
 
     case 'game_state':
+      if (!myPos && msg.state?.forPos) myPos = msg.state.forPos;
       applyGameState(msg.state);
       break;
 

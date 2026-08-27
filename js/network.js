@@ -99,19 +99,24 @@ function callPeer(remotePeerId, remotePos) {
   call.on('error', e => console.warn('call error', e));
 }
 
-/** Answer incoming video call */
-function answerCall(call) {
+/** Answer an incoming video call — but only from a known room member.
+ *  The seat comes from our own playerMap, never from caller metadata
+ *  (peer ids are guessable on the public broker; don't stream the
+ *  camera to strangers or let a caller claim someone else's seat). */
+function answerCall(call, isRetry) {
+  let fromPos = null;
+  for (const [p, info] of Object.entries(playerMap)) {
+    if (info && info.peerId === call.peer) { fromPos = p; break; }
+  }
+  if (!fromPos) {
+    // The player_joined notice may still be in flight — check once more
+    if (!isRetry) setTimeout(() => answerCall(call, true), 2000);
+    else try { call.close(); } catch {}
+    return;
+  }
   call.answer(localStream || undefined);
   videoCalls[call.peer] = call;
-  call.on('stream', stream => {
-    let fromPos = call.metadata?.pos;
-    if (!fromPos) {
-      for (const [p, info] of Object.entries(playerMap)) {
-        if (info && info.peerId === call.peer) { fromPos = p; break; }
-      }
-    }
-    if (fromPos) { remoteStreams[fromPos] = stream; attachVideo(fromPos, stream); }
-  });
+  call.on('stream', stream => { remoteStreams[fromPos] = stream; attachVideo(fromPos, stream); });
   call.on('error', e => console.warn('call error', e));
 }
 
