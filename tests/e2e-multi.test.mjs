@@ -112,8 +112,22 @@ const snapshot = page => page.evaluate(() => ({
 }));
 
 async function act(page, s) {
-  if (s.trumpModal) { await page.click('.trump-opts .trump-btn'); return 'trump'; }
-  if (s.meldModal)  { await page.click('#meld-modal .btn'); return 'meld'; }
+  // modals can be closed by the OTHER player between snapshot and click —
+  // use evaluate-clicks guarded by current visibility, never waiting clicks
+  if (s.trumpModal) {
+    await page.evaluate(() => {
+      if (document.getElementById('trump-modal').classList.contains('visible'))
+        document.querySelector('.trump-opts .trump-btn')?.click();
+    });
+    return 'trump';
+  }
+  if (s.meldModal) {
+    await page.evaluate(() => {
+      if (document.getElementById('meld-modal').classList.contains('visible'))
+        document.querySelector('#meld-modal .btn')?.click();
+    });
+    return 'meld';
+  }
   if (s.bidPanel) {
     await page.evaluate(() => {
       const btns = [...document.querySelectorAll('#action-panel .btn')];

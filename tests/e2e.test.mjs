@@ -150,7 +150,12 @@ while (Date.now() < deadline) {
   }
 
   if (s.meldModal) {
-    await page.click('#meld-modal .btn');
+    // the meld auto-advance timer can close the modal between snapshot and
+    // click — guard by current visibility instead of a waiting click
+    await page.evaluate(() => {
+      if (document.getElementById('meld-modal').classList.contains('visible'))
+        document.querySelector('#meld-modal .btn')?.click();
+    });
     await page.waitForTimeout(300);
     continue;
   }

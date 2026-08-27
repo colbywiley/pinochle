@@ -14,7 +14,12 @@ the computer, so any number of humans from 1–4 works.
   The host sets them in the lobby; they're remembered for next time.
 - **Computer players** — practice solo, or let CPUs fill empty seats
   (a CPU also takes over if someone disconnects mid-game)
-- **Live video chat** — WebRTC peer-to-peer mesh, no server needed
+- **Live video chat** — WebRTC peer-to-peer mesh, no server needed.
+  Capture is tuned to the seat-tile size (320×240@15, ~300 kbps per
+  stream), falls back to audio-only without a camera, reconnects dropped
+  calls, and uses a free TURN relay (Open Relay) so players behind
+  strict NATs still connect — swap in your own TURN server in
+  `js/network.js` for guaranteed capacity.
 - **Partners** — NS vs EW; the host sits South, the second player joins as
   the host's partner
 - **Animated table** — dealt cards, trick sweeps, card passing

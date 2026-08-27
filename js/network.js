@@ -20,8 +20,31 @@ const PEER_OPTS = {
   config: { iceServers: [
     { urls: 'stun:stun.l.google.com:19302' },
     { urls: 'stun:stun1.l.google.com:19302' },
+    // TURN relay fallback: without one, any pair of players where one is
+    // behind a symmetric NAT / CGNAT (mobile hotspots, many ISPs) simply
+    // never connects. Open Relay is a free public TURN service; it is only
+    // used when a direct connection fails. For guaranteed capacity, swap in
+    // your own coturn or a metered.ca account here.
+    { urls: 'turn:openrelay.metered.ca:80',  username: 'openrelayproject', credential: 'openrelayproject' },
+    { urls: 'turn:openrelay.metered.ca:443', username: 'openrelayproject', credential: 'openrelayproject' },
+    { urls: 'turn:openrelay.metered.ca:443?transport=tcp', username: 'openrelayproject', credential: 'openrelayproject' },
   ]}
 };
+
+// The seat tiles render at ~160×120 px, so capture small and cap hard:
+// full-res defaults would push 1–2.5 Mbps per receiver (×3 in a 4-player
+// mesh) for no visible gain. 320×240@15 capped at 300 kbps looks identical
+// at tile size and cuts upload ~90%.
+const MEDIA_CONSTRAINTS = {
+  video: {
+    width:  { ideal: 320 },
+    height: { ideal: 240 },
+    frameRate: { ideal: 15, max: 24 },
+    facingMode: 'user',
+  },
+  audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true },
+};
+const MAX_VIDEO_BITRATE = 300_000; // bps per outgoing stream
 
 /** Init PeerJS. With an id (host) — falls back to a random id if taken. */
 function initPeer(id) {
@@ -37,17 +60,68 @@ function initPeer(id) {
   });
 }
 
-/** Acquire camera + microphone (best effort). If permission arrives
- *  late, (re)establish outgoing calls so peers get our stream. */
+/** Acquire camera + microphone (best effort). Falls back to audio-only
+ *  when the camera is missing or busy, so voice chat still works. If
+ *  permission arrives late, (re)establish calls so peers get our stream. */
 async function startLocalMedia() {
   try {
-    localStream = await navigator.mediaDevices.getUserMedia({ video:true, audio:true });
-    const vid = document.getElementById('local-video');
-    if (vid) { vid.srcObject = localStream; document.getElementById('local-no-video').style.display='none'; }
-    connectVideoMesh();
-  } catch(e) {
-    console.warn('Media unavailable:', e);
+    localStream = await navigator.mediaDevices.getUserMedia(MEDIA_CONSTRAINTS);
+  } catch (e) {
+    console.warn('Camera unavailable, trying audio only:', e);
+    try {
+      localStream = await navigator.mediaDevices.getUserMedia({ audio: MEDIA_CONSTRAINTS.audio });
+    } catch (e2) {
+      console.warn('Media unavailable:', e2);
+      return;
+    }
   }
+  for (const t of localStream.getVideoTracks()) {
+    try { t.contentHint = 'motion'; } catch {}
+  }
+  if (localStream.getVideoTracks().length) {
+    const vid = document.getElementById('local-video');
+    if (vid) { vid.srcObject = localStream; document.getElementById('local-no-video').style.display = 'none'; }
+  } else {
+    document.getElementById('cam-btn')?.classList.add('off');
+  }
+  connectVideoMesh();
+}
+
+/** Cap the outgoing video bitrate on a call (tiles are tiny — don't
+ *  let WebRTC negotiate megabits). Safe no-op where unsupported. */
+function tuneCall(call) {
+  const pc = call.peerConnection;
+  if (!pc || typeof pc.getSenders !== 'function') return;
+  for (const sender of pc.getSenders()) {
+    if (sender.track?.kind !== 'video') continue;
+    try {
+      const params = sender.getParameters();
+      if (!params.encodings || !params.encodings.length) params.encodings = [{}];
+      params.encodings[0].maxBitrate = MAX_VIDEO_BITRATE;
+      params.degradationPreference = 'maintain-framerate';
+      sender.setParameters(params).catch(() => {});
+    } catch {}
+  }
+}
+
+/** Re-establish a media call if it drops mid-session (bounded retries) */
+const callRetries = {}; // peerId -> attempt count
+function wireCallLifecycle(call, peerId) {
+  const onDrop = () => {
+    if (call._dropHandled) return;
+    call._dropHandled = true;
+    if (videoCalls[peerId] === call) {
+      delete videoCalls[peerId];
+      sentStreamTo.delete(peerId);
+    }
+    const inRoom = Object.values(playerMap).some(i => i && !i.bot && i.peerId === peerId);
+    if (!inRoom || !peer) return;
+    callRetries[peerId] = (callRetries[peerId] || 0) + 1;
+    if (callRetries[peerId] > 5) return;
+    ensureVideoCall(peerId, 2500);
+  };
+  call.on('close', onDrop);
+  call.on('error', onDrop);
 }
 
 /** Send a JSON message to a connection */
@@ -113,8 +187,14 @@ function callPeer(remotePeerId, remotePos) {
   if (!call) return;
   videoCalls[remotePeerId] = call;
   sentStreamTo.add(remotePeerId);
-  call.on('stream', stream => { remoteStreams[remotePos] = stream; attachVideo(remotePos, stream); });
-  call.on('error', e => console.warn('call error', e));
+  call.on('stream', stream => {
+    callRetries[remotePeerId] = 0;
+    remoteStreams[remotePos] = stream;
+    attachVideo(remotePos, stream);
+    tuneCall(call);
+  });
+  wireCallLifecycle(call, remotePeerId);
+  setTimeout(() => tuneCall(call), 800);
 }
 
 /** Answer an incoming video call — but only from a known room member.
@@ -134,8 +214,14 @@ function answerCall(call, isRetry) {
   }
   call.answer(localStream || undefined);
   videoCalls[call.peer] = call;
-  call.on('stream', stream => { remoteStreams[fromPos] = stream; attachVideo(fromPos, stream); });
-  call.on('error', e => console.warn('call error', e));
+  call.on('stream', stream => {
+    callRetries[call.peer] = 0;
+    remoteStreams[fromPos] = stream;
+    attachVideo(fromPos, stream);
+    tuneCall(call);
+  });
+  wireCallLifecycle(call, call.peer);
+  setTimeout(() => tuneCall(call), 800);
 }
 
 /** Attach a remote MediaStream to the correct seat video element */
@@ -147,7 +233,8 @@ function attachVideo(absPos, stream) {
   let vid = wrap.querySelector('video');
   if (!vid) { vid = document.createElement('video'); vid.autoplay=true; vid.playsInline=true; wrap.prepend(vid); }
   vid.srcObject = stream;
-  if (noVid) noVid.style.display = 'none';
+  // audio-only peers keep the suit placeholder (black tile otherwise)
+  if (noVid) noVid.style.display = stream.getVideoTracks().length ? 'none' : '';
 }
 
 /** Re-attach all video streams (seat rotation happens when myPos is assigned) */
@@ -161,6 +248,7 @@ function detachVideo(absPos, peerId) {
     try { videoCalls[peerId]?.close(); } catch {}
     delete videoCalls[peerId];
     sentStreamTo.delete(peerId);
+    delete callRetries[peerId];
   }
   delete remoteStreams[absPos];
   const seat = document.getElementById('seat-' + absToDisplay(absPos));
