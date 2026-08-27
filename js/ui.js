@@ -65,6 +65,7 @@ async function doApplyState(view) {
 
   if (newDeal) {
     selectedKeys = [];
+    checkModals(); // clear last round's modals before the ~5s deal animation
     await doNewDeal();
   } else {
     // ── Card played into trick ──

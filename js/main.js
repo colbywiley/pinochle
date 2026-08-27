@@ -17,7 +17,11 @@ const BOT_NAMES  = ['Ace', 'Ruby', 'Jasper'];
 
 // ── CREATE ROOM ───────────────────────────────────────────────────────────────
 
+let lobbyBusy = false; // guards double-clicks on Create / Join / Practice
+
 async function createRoom() {
+  if (lobbyBusy || peer || G) return;
+  lobbyBusy = true;
   myName = document.getElementById('host-name').value.trim() || 'Host';
   isHost = true;
   myPos  = 'south';
@@ -32,7 +36,7 @@ async function createRoom() {
       peer = null;
       if (e?.type !== 'unavailable-id' || attempt === 2) {
         setStatus('create','Error: ' + (e?.message || e?.type || e));
-        isHost = false; myPos = null;
+        isHost = false; myPos = null; lobbyBusy = false;
         return;
       }
     }
@@ -63,9 +67,11 @@ async function createRoom() {
 // ── JOIN ROOM ─────────────────────────────────────────────────────────────────
 
 async function joinRoom() {
+  if (lobbyBusy || peer || G) return;
   myName   = document.getElementById('join-name').value.trim() || 'Player';
   roomCode = document.getElementById('room-input').value.trim().toUpperCase();
   if (!roomCode) { setStatus('join','Enter a room code.'); return; }
+  lobbyBusy = true;
   isHost = false;
 
   setStatus('join','Connecting<span class="dot">.</span><span class="dot">.</span><span class="dot">.</span>');
@@ -73,11 +79,15 @@ async function joinRoom() {
     peer = await initPeer(null); // random id for clients
   } catch(e) {
     setStatus('join','Error: ' + (e?.message || e?.type || e));
+    lobbyBusy = false;
     return;
   }
 
   peer.on('error', err => {
-    if (err?.type === 'peer-unavailable') setStatus('join','Room not found — check the code.');
+    if (err?.type === 'peer-unavailable') {
+      setStatus('join','⚠ Room not found — check the code.');
+      resetLobbyConnection(); // let them fix the code and try again
+    }
   });
   peer.on('call', answerCall);
   document.querySelector('.solo-bar').style.display = 'none'; // no mode-mixing
@@ -105,6 +115,9 @@ function onIncomingDataConn(conn) {
     const reject = err => { sendConn(conn, { type:'error', error: err }); setTimeout(() => conn.close(), 800); };
     if (soloMode) { reject('This room is a practice game'); return; }
     if (G) { reject('Game already in progress'); return; }
+    for (const info of Object.values(playerMap)) {
+      if (info && info.peerId === conn.peer) { reject('Already seated in this room'); return; }
+    }
     const pos = JOIN_ORDER.find(p => !playerMap[p]);
     if (!pos) { reject('Room is full'); return; }
 
@@ -132,6 +145,13 @@ function onIncomingDataConn(conn) {
 
 // ── DISCONNECTS ───────────────────────────────────────────────────────────────
 
+/** Tear down a client's lobby connection so Join can be retried */
+function resetLobbyConnection() {
+  try { peer?.destroy(); } catch {}
+  peer = null; myPeerId = null; lobbyBusy = false;
+  for (const k of Object.keys(dataConns)) delete dataConns[k];
+}
+
 function onConnClosed(label) {
   if (!isHost) {
     if (label === 'host') {
@@ -139,7 +159,12 @@ function onConnClosed(label) {
         alert('Lost connection to the host.');
         location.reload();
       } else {
-        setStatus('join','Disconnected from host.');
+        // Keep a rejection reason ('⚠ Room is full', …) visible if one was shown
+        const st = document.getElementById('join-status');
+        if (!st || !st.textContent.trim().startsWith('⚠')) {
+          setStatus('join','Disconnected from host.');
+        }
+        resetLobbyConnection();
       }
     }
     return;
@@ -197,7 +222,7 @@ function hostStartGame() {
 // ── PRACTICE VS COMPUTER ──────────────────────────────────────────────────────
 
 function startPracticeSetup() {
-  if (peer || G) return; // never mix practice with a live network session
+  if (lobbyBusy || peer || G) return; // never mix practice with a live network session
   soloMode = true;
   isHost   = true;
   myPos    = 'south';
