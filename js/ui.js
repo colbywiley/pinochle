@@ -1,208 +1,157 @@
 // ══════════════════════════════════════════
 //  ui.js — rendering wired to anim.js
+//  Renders V, the redacted view received from the host.
+//  V is never the authoritative state (that's G, host-only).
 // ══════════════════════════════════════════
 
 // ── Position helpers ──────────────────────────────────────────
-// In solo mode: fixed perspective (south=south always, no rotation)
-// In multiplayer: rotate so myPos always displays at south
+// Rotate so myPos always displays at south
 function absToDisplay(absPos) {
   if (!myPos) return absPos;
-  if (typeof soloMode !== 'undefined' && soloMode) return absPos;
   return ['south','west','north','east'][
     (POSITIONS.indexOf(absPos) - POSITIONS.indexOf(myPos) + 4) % 4];
 }
 function displayToAbs(dispPos) {
   if (!myPos) return dispPos;
-  if (typeof soloMode !== 'undefined' && soloMode) return dispPos;
   const di = ['south','west','north','east'].indexOf(dispPos);
   return POSITIONS[(POSITIONS.indexOf(myPos) + di) % 4];
 }
 
 // ── State tracking ────────────────────────────────────────────
-let prevPhase      = null;
-let prevTrickLen   = 0;
-let lastTrickKeys  = [];
-let animBusy       = false;
+let V = null;                       // current view
+let applyQueue = Promise.resolve(); // serialize state applications
+let lastLogSeq   = 0;
+let meldModalShownRound = 0;
+let selectedKeys = [];              // selected card keys (pass / return phases)
 
-let passSelectedCards = [];
-let discardSelected   = [];
+function handArr(state, pos) {
+  const h = state?.hands?.[pos];
+  return Array.isArray(h) ? h : [];
+}
+function handCount(state, pos) {
+  const h = state?.hands?.[pos];
+  if (Array.isArray(h)) return h.length;
+  return h?.count ?? 0;
+}
+function playerName(pos) {
+  const info = V?.players?.[pos] || playerMap[pos];
+  return info?.name || pos;
+}
 
 // ── Top-level state application ───────────────────────────────
 
-async function applyGameState(state) {
-  const prev = G ? JSON.parse(JSON.stringify(G)) : null;
-  G = state;
+function applyGameState(view) {
+  applyQueue = applyQueue
+    .then(() => doApplyState(view))
+    .catch(e => console.error('applyGameState failed', e));
+  return applyQueue;
+}
+
+async function doApplyState(view) {
+  const prev = V;
+  V = view;
 
   renderTopBar();
   renderSeats();
   renderActionPanel();
-  renderPassPanel();
-  renderDiscardPanel();
+  renderPassPanels();
   renderMeldSidebar();
+  renderLog();
 
-  const phaseChanged = G.phase !== prevPhase;
-  const myHandArr    = Array.isArray(G.hands?.[myPos]) ? G.hands[myPos] : [];
-  const prevHandArr  = Array.isArray(prev?.hands?.[myPos]) ? prev.hands[myPos] : [];
+  if (!animLayer) initAnimLayer();
 
-  // ── NEW DEAL ──────────────────────────────────────────────
-  if (prevHandArr.length === 0 && myHandArr.length === 12 && G.phase === 'bidding') {
+  const newDeal = V.phase === 'bidding' &&
+    (!prev || prev.phase === 'round_over' || prev.roundNum !== V.roundNum);
+
+  if (newDeal) {
+    selectedKeys = [];
+    checkModals(); // clear last round's modals before the ~5s deal animation
     await doNewDeal();
-  }
-
-  // ── TRUMP BURST ───────────────────────────────────────────
-  if (phaseChanged && G.phase === 'meld' && G.trump) {
-    animTrumpBurst(G.trump);
-    await wait(300);
-    refreshAllHands();
-  }
-
-  // ── CARD PLAYED INTO TRICK ────────────────────────────────
-  const trickLen = G.currentTrick?.length ?? 0;
-  if (trickLen > prevTrickLen && trickLen > 0 && G.phase === 'playing') {
-    const newest  = G.currentTrick[trickLen - 1];
-    const dispFrom = absToDisplay(newest.seat);
-    await animPlayCard(newest.card, dispFrom);
-    // Update hand display
-    if (newest.seat === myPos) {
-      rebuildMyHandFan();
-    } else if (typeof soloMode !== 'undefined' && soloMode) {
-      // Solo: re-fan that seat's real hand face-up
-      const dispFrom2 = absToDisplay(newest.seat);
-      const hand2 = Array.isArray(G.hands?.[newest.seat]) ? [...G.hands[newest.seat]] : [];
-      sortHand(hand2, G.trump);
-      rebuildHandFan(dispFrom2, hand2, { selKeys:[], legalKeys:[], clickable:false, onCardClick:null });
-    } else {
-      const cnt = G.hands[newest.seat]?.count ?? 0;
-      rebuildOppStubs(dispFrom, cnt);
+  } else {
+    // ── Card played into trick ──
+    const tLen = V.currentTrick?.length ?? 0;
+    const pLen = prev?.currentTrick?.length ?? 0;
+    if (tLen > pLen && tLen > 0) {
+      for (let i = pLen; i < tLen; i++) {
+        const played = V.currentTrick[i];
+        await animPlayCard(played.card, absToDisplay(played.seat));
+      }
     }
-  }
-
-  // ── TRICK SWEEP ───────────────────────────────────────────
-  if (prevTrickLen === 4 && trickLen === 0 && G.phase === 'playing') {
-    if (lastTrickKeys.length === 4) {
-      const winnerAbs  = prev?.trickLeader || G.trickLeader;
-      const winnerDisp = absToDisplay(winnerAbs);
-      await animTrickSweep(winnerDisp, lastTrickKeys);
-      lastTrickKeys = [];
-      refreshAllHands();
+    // ── Trick swept to winner ──
+    if (pLen === 4 && tLen === 0) {
+      const keys = prev.currentTrick.map(t => cardKey(t.card));
+      await animTrickSweep(absToDisplay(V.trickLeader), keys);
     }
-  }
-
-  // Track trick for sweep
-  if (trickLen === 4) {
-    lastTrickKeys = G.currentTrick.map(t => cardKey(t.card));
-  }
-  prevTrickLen = trickLen;
-  prevPhase    = G.phase;
-
-  // Solo mode: always refresh hands to ensure correct interactivity
-  // after seat switches and phase changes (deal/trump/sweep paths handle
-  // their own refresh, but seat switches and phase transitions don't)
-  if (typeof soloMode !== 'undefined' && soloMode && !animBusy) {
+    // ── Pass / return observed (cards fly between partners) ──
+    if (prev && prev.phase === 'passing' && V.phase === 'returning' &&
+        myPos !== partnerOf(V.highBidder)) {
+      await animFlyBacks(absToDisplay(partnerOf(V.highBidder)), absToDisplay(V.highBidder), 3);
+    }
+    if (prev && prev.phase === 'returning' && V.phase === 'meld' &&
+        myPos !== V.highBidder) {
+      await animFlyBacks(absToDisplay(V.highBidder), absToDisplay(partnerOf(V.highBidder)), 3);
+    }
+    if (prev && prev.phase !== V.phase && V.phase === 'meld' && V.trump) {
+      animTrumpBurst(V.trump);
+    }
     refreshAllHands();
   }
 
   checkModals();
-
-  // Solo mode: update turn indicator after every state change
-  if (typeof soloMode !== 'undefined' && soloMode) updateSoloSwitcher();
 }
 
 // ── NEW DEAL SEQUENCE ─────────────────────────────────────────
 
 async function doNewDeal() {
-  animBusy = true;
-  passSelectedCards = [];
-  discardSelected   = [];
   clearAllCards();
-  await wait(250);
+  await wait(200);
   await animShuffle();
 
   const handsData = {};
   for (const absPos of POSITIONS) {
-    if (typeof soloMode !== 'undefined' && soloMode) {
-      handsData[absPos] = G.hands[absPos];
-    } else {
-      handsData[absPos] = absPos === myPos ? G.hands[myPos] : null;
-    }
+    handsData[absPos] = absPos === myPos ? handArr(V, myPos) : null;
   }
   await animDeal(handsData);
-  animBusy = false;
   refreshAllHands();
 }
 
 // ── HAND REFRESH ─────────────────────────────────────────────
 
 function refreshAllHands() {
-  if (typeof soloMode !== 'undefined' && soloMode) {
-    for (const absPos of POSITIONS) {
-      const dispPos = absToDisplay(absPos);
-      const hand    = Array.isArray(G.hands?.[absPos]) ? [...G.hands[absPos]] : [];
-      sortHand(hand, G.trump);
-      if (!hand.length) continue;
-      if (absPos === myPos) {
-        refreshMyHandInteraction(hand);
-      } else {
-        rebuildHandFan(dispPos, hand, { selKeys:[], legalKeys:[], clickable:false, onCardClick:null });
-      }
-    }
-    return;
-  }
+  if (!V) return;
   rebuildMyHandFan();
   for (const disp of ['west','north','east']) {
-    const absPos    = displayToAbs(disp);
-    const countData = G.hands?.[absPos];
-    const count     = countData?.count ?? (Array.isArray(countData) ? countData.length : 0);
-    rebuildOppStubs(disp, count);
+    rebuildOppStubs(disp, handCount(V, displayToAbs(disp)));
   }
-}
-
-function soloWhoseTurn() {
-  if (!G) return null;
-  if (G.phase === 'bidding') return G.currentBidder;
-  if (G.phase === 'passing') return G.highBidder;
-  if (G.phase === 'discarding') return partnerOf(G.highBidder);
-  if (G.phase === 'naming_trump') return G.highBidder;
-  if (G.phase === 'playing') {
-    if (!G.currentTrick?.length) return G.trickLeader;
-    return leftOf(G.currentTrick[G.currentTrick.length-1].seat);
-  }
-  return null;
+  // Remove any card elements that are no longer mine or on the table
+  const valid = new Set(handArr(V, myPos).map(cardKey));
+  for (const t of (V.currentTrick || [])) valid.add(cardKey(t.card));
+  cleanupRegistry(valid);
 }
 
 function rebuildMyHandFan() {
-  const hand = Array.isArray(G.hands?.[myPos]) ? [...G.hands[myPos]] : [];
-  sortHand(hand, G.trump);
-  refreshMyHandInteraction(hand);
-}
+  const hand = [...handArr(V, myPos)];
+  sortHand(hand, V.trump);
 
-function refreshMyHandInteraction(hand) {
-  hand = hand || (Array.isArray(G.hands?.[myPos]) ? [...G.hands[myPos]] : []);
-  sortHand(hand, G.trump);
-  if (!hand.length) return;
-
-  const isPassPhase    = G.phase === 'passing'    && G.highBidder === myPos;
-  const isDiscardPhase = G.phase === 'discarding' && partnerOf(G.highBidder) === myPos;
-  const myTurn         = G.phase === 'playing'    && isMyTurn();
+  const isPassPhase   = V.phase === 'passing'   && partnerOf(V.highBidder) === myPos;
+  const isReturnPhase = V.phase === 'returning' && V.highBidder === myPos;
+  const myTurn        = isMyTurn();
 
   let legalKeys = [];
-  if (myTurn) legalKeys = legalPlays(G, myPos).map(c => cardKey(c));
+  if (myTurn) legalKeys = legalPlays(V, myPos).map(cardKey);
+  else if (isPassPhase || isReturnPhase) legalKeys = hand.map(cardKey);
 
-  const selKeys = isPassPhase    ? passSelectedCards.map(c => cardKey(c))
-                : isDiscardPhase ? discardSelected.map(c => cardKey(c))
-                : [];
+  const clickable = isPassPhase || isReturnPhase || myTurn;
+  const receivedKeys = isReturnPhase ? (V.passedIds || []) : [];
 
-  const clickable = isPassPhase || isDiscardPhase || myTurn;
-
-  const myDisp = absToDisplay(myPos);
-  rebuildHandFan(myDisp, hand, {
-    selKeys,
-    legalKeys: myTurn ? legalKeys : (clickable ? hand.map(c => cardKey(c)) : []),
+  rebuildHandFan(absToDisplay(myPos), hand, {
+    selKeys: clickable ? selectedKeys : [],
+    legalKeys,
+    receivedKeys,
     clickable,
     onCardClick: card => {
-      if (isPassPhase)    { togglePassSelect(card);    return; }
-      if (isDiscardPhase) { toggleDiscardSelect(card); return; }
-      if (myTurn && legalKeys.includes(cardKey(card))) {
+      if (isPassPhase || isReturnPhase) { toggleSelect(card); return; }
+      if (isMyTurn() && legalPlays(V, myPos).some(c => cardKey(c) === cardKey(card))) {
         sendToHost({ action: 'play_card', card });
       }
     }
@@ -210,84 +159,78 @@ function refreshMyHandInteraction(hand) {
 }
 
 function isMyTurn() {
-  if (G.phase !== 'playing') return false;
-  if (!G.currentTrick?.length) return G.trickLeader === myPos;
-  return leftOf(G.currentTrick[G.currentTrick.length - 1].seat) === myPos;
+  if (!V || V.phase !== 'playing') return false;
+  if ((V.currentTrick?.length ?? 0) >= 4) return false; // trick on display
+  return nextToPlay(V) === myPos;
 }
-
-function getLegalPlaysLocal() { return legalPlays(G, myPos); }
 
 // ── TOP BAR ──────────────────────────────────────────────────
 
+const PHASE_LABELS = {
+  bidding:'Bidding', naming_trump:'Name Trump', passing:'Passing',
+  returning:'Passing Back', meld:'Meld', playing:'Playing', round_over:'Round Over'
+};
+
 function renderTopBar() {
-  const PHASE_LABELS = {
-    bidding:'Bidding', passing:'Passing', discarding:'Partner Discards',
-    naming_trump:'Name Trump', meld:'Meld', playing:'Playing', round_over:'Round Over'
-  };
-  document.getElementById('phase-label').textContent = PHASE_LABELS[G.phase] || G.phase;
+  document.getElementById('phase-label').textContent = PHASE_LABELS[V.phase] || V.phase;
 
   const bs = document.getElementById('bid-summary');
-  bs.textContent = (G.highBid > 0 && G.highBidder)
-    ? `· ${playerMap[G.highBidder]?.name || G.highBidder} ${G.highBid}` : '';
+  bs.textContent = (V.highBid > 0 && V.highBidder)
+    ? `· ${playerName(V.highBidder)} ${V.highBid}` : '';
 
   const td = document.getElementById('trump-display');
-  if (G.trump) {
-    td.textContent   = `Trump: ${SUIT_SYM[G.trump]}`;
+  if (V.trump) {
+    td.textContent   = `Trump: ${SUIT_SYM[V.trump]}`;
     td.style.display = 'block';
-    td.className     = RED_SUITS.has(G.trump) ? 'red' : '';
+    td.className     = RED_SUITS.has(V.trump) ? 'red' : '';
   } else td.style.display = 'none';
 
-  document.getElementById('score-ns').textContent = G.scores.ns;
-  document.getElementById('score-ew').textContent = G.scores.ew;
+  document.getElementById('score-ns').textContent = V.scores.ns;
+  document.getElementById('score-ew').textContent = V.scores.ew;
   document.getElementById('score-ns-wrap').className = 'score-team' +
-    (G.scores.ns >= 150 ? ' winning' : G.scores.ns < 0 ? ' at-risk' : '');
+    (V.scores.ns >= GOAL ? ' winning' : V.scores.ns < 0 ? ' at-risk' : '');
   document.getElementById('score-ew-wrap').className = 'score-team' +
-    (G.scores.ew >= 150 ? ' winning' : G.scores.ew < 0 ? ' at-risk' : '');
+    (V.scores.ew >= GOAL ? ' winning' : V.scores.ew < 0 ? ' at-risk' : '');
 
-  const nsNames = POSITIONS.filter(p=>teamOf(p)==='ns').map(p=>playerMap[p]?.name||p).join('/');
-  const ewNames = POSITIONS.filter(p=>teamOf(p)==='ew').map(p=>playerMap[p]?.name||p).join('/');
+  const nsNames = POSITIONS.filter(p=>teamOf(p)==='ns').map(playerName).join('/');
+  const ewNames = POSITIONS.filter(p=>teamOf(p)==='ew').map(playerName).join('/');
   document.getElementById('score-ns-name').textContent = nsNames || 'NS';
   document.getElementById('score-ew-name').textContent = ewNames || 'EW';
 
-  document.getElementById('tt-ns').textContent = G.tricksWon?.ns ?? 0;
-  document.getElementById('tt-ew').textContent = G.tricksWon?.ew ?? 0;
+  document.getElementById('tt-ns').textContent = V.tricksWon?.ns ?? 0;
+  document.getElementById('tt-ew').textContent = V.tricksWon?.ew ?? 0;
 
   for (const p of POSITIONS) {
     const wrap = document.querySelector(`#seat-${absToDisplay(p)} .seat-video-wrap`);
-    if (wrap) wrap.classList.toggle('is-dealer', p === G.dealer);
+    if (wrap) wrap.classList.toggle('is-dealer', p === V.dealer);
   }
 }
 
 // ── SEATS ────────────────────────────────────────────────────
 
 function renderSeats() {
-  // Determine whose turn it is for the active-turn indicator
-  let activeSeat = null;
-  if (G.phase === 'bidding')      activeSeat = G.currentBidder;
-  else if (G.phase === 'passing') activeSeat = G.highBidder;
-  else if (G.phase === 'discarding') activeSeat = partnerOf(G.highBidder);
-  else if (G.phase === 'naming_trump') activeSeat = G.highBidder;
-  else if (G.phase === 'playing') {
-    if (!G.currentTrick?.length) activeSeat = G.trickLeader;
-    else activeSeat = leftOf(G.currentTrick[G.currentTrick.length-1].seat);
-  }
+  const activeSeat = (V.currentTrick?.length ?? 0) >= 4 ? null : currentActor(V);
 
   for (const pos of POSITIONS) {
     const disp   = absToDisplay(pos);
-    const info   = playerMap[pos];
+    const info   = V.players?.[pos] || playerMap[pos];
     const nameEl = document.getElementById('name-' + disp);
-    if (nameEl) nameEl.textContent = info ? (pos===myPos?'You · '+info.name : info.name) : '—';
+    if (nameEl) {
+      const nm = info ? info.name : '—';
+      nameEl.textContent = pos === myPos
+        ? (nm && nm !== 'You' ? 'You · ' + nm : 'You')
+        : (info?.bot ? '🤖 ' + nm : nm);
+    }
 
-    // Turn indicator glow
     const seatEl = document.getElementById('seat-' + disp);
     if (seatEl) seatEl.classList.toggle('active-turn', pos === activeSeat);
 
     const badge = document.getElementById('badge-' + disp);
     if (badge) {
-      const b = G.bids?.[pos];
-      if (b !== null && b !== undefined) {
-        badge.textContent = b===0 ? 'Pass' : String(b);
-        badge.className   = 'bid-badge visible' + (b===0?' pass':'');
+      const b = V.bids?.[pos];
+      if (V.phase === 'bidding' && b !== null && b !== undefined) {
+        badge.textContent = b === 0 ? 'Pass' : String(b);
+        badge.className   = 'bid-badge visible' + (b === 0 ? ' pass' : '');
       } else badge.className = 'bid-badge';
     }
   }
@@ -297,41 +240,36 @@ function renderSeats() {
 
 function renderActionPanel() {
   const panel = document.getElementById('action-panel');
-  panel.innerHTML = ''; panel.classList.remove('visible'); panel.classList.remove('play-hint');
+  panel.innerHTML = '';
+  panel.classList.remove('visible', 'play-hint');
 
-  // Show bid panel when it's myPos's turn and they haven't passed (null or >0 bid)
-  if (G.phase === 'bidding' && G.currentBidder === myPos && G.bids?.[myPos] !== 0) {
+  // ── My bid turn: centered bid dialog ──
+  if (V.phase === 'bidding' && V.currentBidder === myPos && V.bids?.[myPos] !== 0) {
     panel.classList.add('visible');
-    const minBid = Math.max(MIN_BID, G.highBid + 1);
-    const allOthersPassed = POSITIONS.filter(p=>p!==G.dealer).every(p=>G.bids[p]===0);
-    const isStuck = G.dealer === myPos && allOthersPassed && G.highBid === 0;
-    const seatName = myPos.charAt(0).toUpperCase() + myPos.slice(1);
+    const minBid = Math.max(MIN_BID, V.highBid + 1);
+    const allOthersPassed = POSITIONS.filter(p=>p!==V.dealer).every(p=>V.bids[p]===0);
+    const isStuck = V.dealer === myPos && allOthersPassed && V.highBid === 0;
 
-    // Current bid status line
-    if (G.highBid > 0 && G.highBidder) {
-      const bidderName = playerMap[G.highBidder]?.name || G.highBidder;
-      const status = document.createElement('div');
-      status.className = 'ap-status';
-      status.textContent = `Current high bid: ${G.highBid} by ${bidderName}`;
-      panel.appendChild(status);
-    } else {
-      const status = document.createElement('div');
-      status.className = 'ap-status';
-      status.textContent = 'No bids yet — minimum bid is 25';
-      panel.appendChild(status);
-    }
+    const status = document.createElement('div');
+    status.className = 'ap-status';
+    status.textContent = isStuck
+      ? `Everyone passed — you're the dealer and must bid ${MIN_BID}`
+      : (V.highBid > 0
+          ? `Current high bid: ${V.highBid} by ${playerName(V.highBidder)}`
+          : `No bids yet — minimum bid is ${MIN_BID}`);
+    panel.appendChild(status);
 
     const row = document.createElement('div');
     row.className = 'ap-row';
 
     const label = document.createElement('span');
     label.className = 'ap-label';
-    label.textContent = isStuck ? `${seatName} must bid:` : `${seatName}'s Bid:`;
+    label.textContent = 'Your bid:';
     row.appendChild(label);
 
     const inp = document.createElement('input');
-    inp.type='number'; inp.id='bid-input'; inp.min=minBid; inp.max=99; inp.value=minBid;
-    const getBidAmount = () => { const v = parseInt(inp.value); return isNaN(v) ? minBid : v; };
+    inp.type='number'; inp.id='bid-input'; inp.min=minBid; inp.max=MAX_BID; inp.value=minBid;
+    const getBidAmount = () => { const x = parseInt(inp.value); return isNaN(x) ? minBid : x; };
     inp.addEventListener('keydown', e => { if(e.key==='Enter') sendToHost({ action:'bid', amount:getBidAmount() }); });
     row.appendChild(inp);
 
@@ -346,117 +284,133 @@ function renderActionPanel() {
       passBtn.onclick = () => sendToHost({ action:'bid', amount:0 });
       row.appendChild(passBtn);
     }
-
     panel.appendChild(row);
     setTimeout(()=>inp?.focus(), 60);
+    return;
   }
 
-  if (G.phase === 'playing' && isMyTurn()) {
+  // ── Non-blocking hints ──
+  const hint = txt => {
     panel.classList.add('visible', 'play-hint');
-    const seatName = myPos.charAt(0).toUpperCase() + myPos.slice(1);
     const lbl = document.createElement('span');
     lbl.className = 'ap-label';
-    lbl.textContent = !G.currentTrick?.length
-      ? `${seatName} leads — click a card`
-      : `${seatName}'s turn — must head if able`;
+    lbl.textContent = txt;
     panel.appendChild(lbl);
-    if (G.trump) {
-      const trump = document.createElement('span');
-      trump.className = 'ap-trump';
-      trump.textContent = `Trump: ${SUIT_SYM[G.trump]}`;
-      trump.style.cssText = `font-size:1rem; margin-left:12px; color:${RED_SUITS.has(G.trump)?'#ff6666':'var(--cream)'}`;
-      lbl.appendChild(trump);
-    }
-  }
+    return lbl;
+  };
 
-  // Waiting message when it's not your turn during play
-  if (G.phase === 'playing' && !isMyTurn()) {
-    const whosTurn = soloWhoseTurn ? soloWhoseTurn() : null;
-    // Only show in non-solo mode (solo auto-switches)
-    if (!soloMode && whosTurn) {
-      panel.classList.add('visible', 'play-hint');
-      const name = playerMap[whosTurn]?.name || whosTurn;
-      const lbl = document.createElement('span');
-      lbl.className = 'ap-label';
-      lbl.style.opacity = '0.7';
-      lbl.textContent = `Waiting for ${name}...`;
-      panel.appendChild(lbl);
+  if (V.phase === 'bidding' && V.currentBidder !== myPos) {
+    const l = hint(`Waiting for ${playerName(V.currentBidder)} to bid…`);
+    l.style.opacity = '0.75';
+  } else if (V.phase === 'naming_trump' && V.highBidder !== myPos) {
+    const l = hint(`${playerName(V.highBidder)} won the bid at ${V.highBid} — naming trump…`);
+    l.style.opacity = '0.75';
+  } else if (V.phase === 'passing' && partnerOf(V.highBidder) !== myPos) {
+    const l = hint(`${playerName(partnerOf(V.highBidder))} is passing 3 cards to ${playerName(V.highBidder)}…`);
+    l.style.opacity = '0.75';
+  } else if (V.phase === 'returning' && V.highBidder !== myPos) {
+    const l = hint(`${playerName(V.highBidder)} is returning 3 cards…`);
+    l.style.opacity = '0.75';
+  } else if (V.phase === 'playing') {
+    if (isMyTurn()) {
+      const lbl = hint(!V.currentTrick?.length
+        ? 'You lead — click a card'
+        : 'Your turn — you must head the trick if able');
+      if (V.trump) {
+        const t = document.createElement('span');
+        t.textContent = ` · Trump: ${SUIT_SYM[V.trump]}`;
+        t.style.cssText = `color:${RED_SUITS.has(V.trump)?'#ff8888':'var(--cream)'}`;
+        lbl.appendChild(t);
+      }
+    } else {
+      const actor = currentActor(V);
+      if (actor) {
+        const l = hint(`Waiting for ${playerName(actor)}…`);
+        l.style.opacity = '0.6';
+      }
     }
   }
 }
 
-// ── PASS / DISCARD ────────────────────────────────────────────
+// ── PASS / RETURN PANELS ──────────────────────────────────────
 
-function renderPassPanel() {
-  const p = document.getElementById('pass-panel');
-  if (G.phase === 'passing' && G.highBidder === myPos) {
-    p.style.display = 'flex';
+function renderPassPanels() {
+  const passP = document.getElementById('pass-panel');
+  const retP  = document.getElementById('return-panel');
+  const showPass = V.phase === 'passing'   && partnerOf(V.highBidder) === myPos;
+  const showRet  = V.phase === 'returning' && V.highBidder === myPos;
+
+  passP.style.display = showPass ? 'flex' : 'none';
+  retP.style.display  = showRet  ? 'flex' : 'none';
+
+  const selText = () => selectedKeys.length === 0 ? '' :
+    selectedKeys.map(k => {
+      const c = handArr(V, myPos).find(c => cardKey(c) === k);
+      return c ? c.r + SUIT_SYM[c.s] : '';
+    }).filter(Boolean).join(' · ');
+
+  if (showPass) {
+    document.getElementById('pass-title').textContent =
+      `Your partner ${playerName(V.highBidder)} won the bid — pass them your best 3 cards`;
     document.getElementById('pass-selected-display').textContent =
-      passSelectedCards.length===0 ? 'Click 3 cards in your hand to pass' :
-      passSelectedCards.map(c=>c.r+SUIT_SYM[c.s]).join(' · ');
-    document.getElementById('pass-confirm-btn').disabled = passSelectedCards.length !== 3;
-  } else p.style.display = 'none';
+      selectedKeys.length ? selText() : 'Click 3 cards in your hand';
+    document.getElementById('pass-confirm-btn').disabled = selectedKeys.length !== 3;
+  }
+  if (showRet) {
+    document.getElementById('return-title').textContent =
+      `${playerName(partnerOf(V.highBidder))} passed you 3 cards (highlighted) — return any 3`;
+    document.getElementById('return-selected-display').textContent =
+      selectedKeys.length ? selText() : 'Click 3 cards in your hand';
+    document.getElementById('return-confirm-btn').disabled = selectedKeys.length !== 3;
+  }
 }
 
-function renderDiscardPanel() {
-  const p = document.getElementById('discard-panel');
-  if (G.phase === 'discarding' && partnerOf(G.highBidder) === myPos) {
-    p.style.display = 'flex';
-    document.getElementById('discard-selected-display').textContent =
-      discardSelected.length===0 ? 'Partner passed you 3. Click 3 to discard.' :
-      discardSelected.map(c=>c.r+SUIT_SYM[c.s]).join(' · ');
-    document.getElementById('discard-confirm-btn').disabled = discardSelected.length !== 3;
-  } else p.style.display = 'none';
+function toggleSelect(card) {
+  const key = cardKey(card);
+  const idx = selectedKeys.indexOf(key);
+  if (idx >= 0) selectedKeys.splice(idx, 1);
+  else if (selectedKeys.length < 3) selectedKeys.push(key);
+  rebuildMyHandFan();
+  renderPassPanels();
 }
 
-function togglePassSelect(card) {
-  const idx = passSelectedCards.findIndex(c=>sameCard(c,card));
-  if (idx >= 0) passSelectedCards.splice(idx, 1);
-  else if (passSelectedCards.length < 3) passSelectedCards.push(card);
-  refreshMyHandInteraction(); renderPassPanel();
-}
-
-function toggleDiscardSelect(card) {
-  const idx = discardSelected.findIndex(c=>sameCard(c,card));
-  if (idx >= 0) discardSelected.splice(idx, 1);
-  else if (discardSelected.length < 3) discardSelected.push(card);
-  refreshMyHandInteraction(); renderDiscardPanel();
+function selectedCards() {
+  const hand = handArr(V, myPos);
+  return selectedKeys.map(k => hand.find(c => cardKey(c) === k)).filter(Boolean);
 }
 
 async function confirmPass() {
-  if (passSelectedCards.length !== 3) return;
-  const cards = [...passSelectedCards];
-  passSelectedCards = [];
-  const toDisp = absToDisplay(partnerOf(myPos));
-  const fromDisp = absToDisplay(myPos);
-  await animPassCards(cards, fromDisp, toDisp);
+  const cards = selectedCards();
+  if (cards.length !== 3 || V.phase !== 'passing') return;
+  selectedKeys = [];
+  document.getElementById('pass-panel').style.display = 'none';
+  await animPassCards(cards, absToDisplay(myPos), absToDisplay(V.highBidder));
   sendToHost({ action:'pass_cards', cards });
 }
 
-async function confirmDiscard() {
-  if (discardSelected.length !== 3) return;
-  const cards = [...discardSelected];
-  discardSelected = [];
-  const fromDisp = absToDisplay(myPos);
-  await animDiscardCards(cards, fromDisp);
-  sendToHost({ action:'discard_cards', cards });
+async function confirmReturn() {
+  const cards = selectedCards();
+  if (cards.length !== 3 || V.phase !== 'returning') return;
+  selectedKeys = [];
+  document.getElementById('return-panel').style.display = 'none';
+  await animPassCards(cards, absToDisplay(myPos), absToDisplay(partnerOf(myPos)));
+  sendToHost({ action:'return_cards', cards });
 }
 
 // ── MELD SIDEBAR ─────────────────────────────────────────────
 
 function renderMeldSidebar() {
   const sidebar = document.getElementById('meld-sidebar');
-  if (G.phase !== 'meld' && G.phase !== 'playing') { sidebar.style.display='none'; return; }
+  if (V.phase !== 'meld' && V.phase !== 'playing') { sidebar.style.display='none'; return; }
   sidebar.style.display='block';
   const rows = document.getElementById('meld-rows');
   rows.innerHTML = '';
   for (const pos of POSITIONS) {
-    const name  = playerMap[pos]?.name || pos;
-    const total = G.meld?.[pos] ?? 0;
-    const brk   = G.meldBreak?.[pos] ?? [];
+    const total = V.meld?.[pos] ?? 0;
+    const brk   = V.meldBreak?.[pos] ?? [];
     const block = document.createElement('div');
     block.className = 'meld-player-block';
-    block.innerHTML = `<div class="meld-player-name">${name}${pos===myPos?' ★':''}</div>
+    block.innerHTML = `<div class="meld-player-name">${escapeHtml(playerName(pos))}${pos===myPos?' ★':''}</div>
       <div class="meld-player-total">${total}</div>
       <div class="meld-detail">${brk.map(([l,v])=>`${l}: ${v}`).join('<br>')||'—'}</div>`;
     rows.appendChild(block);
@@ -466,92 +420,102 @@ function renderMeldSidebar() {
 // ── MODALS ────────────────────────────────────────────────────
 
 function checkModals() {
-  const showTrump = G.phase === 'naming_trump' && G.highBidder === myPos;
+  const showTrump = V.phase === 'naming_trump' && V.highBidder === myPos;
   document.getElementById('trump-modal').classList.toggle('visible', showTrump);
-  if (showTrump) document.getElementById('won-bid-amt').textContent = G.highBid;
+  if (showTrump) document.getElementById('won-bid-amt').textContent = V.highBid;
 
-  if (G.phase === 'meld') showMeldModal();
-  else document.getElementById('meld-modal').classList.remove('visible');
+  if (V.phase === 'meld') {
+    if (meldModalShownRound !== V.roundNum) {
+      meldModalShownRound = V.roundNum;
+      showMeldModal();
+    }
+  } else document.getElementById('meld-modal').classList.remove('visible');
 
-  if (G.phase === 'round_over') showRoundModal();
+  const roundOverSettled = V.phase === 'round_over' && (V.currentTrick?.length ?? 0) === 0;
+  const reviewOpen = document.getElementById('review-modal').classList.contains('visible');
+  if (roundOverSettled && !V.winner) { if (!reviewOpen) showRoundModal(); }
   else document.getElementById('round-modal').classList.remove('visible');
 
-  if (G.winner) showGameOver();
-  else document.getElementById('gameover-modal').classList.remove('visible');
+  if (V.winner && roundOverSettled) { if (!reviewOpen) showGameOver(); }
+  else if (!V.winner) document.getElementById('gameover-modal').classList.remove('visible');
+
+  // The host may advance the round while someone is still in deal review
+  if (reviewOpen && !roundOverSettled) {
+    document.getElementById('review-modal').classList.remove('visible');
+  }
 }
 
 function showMeldModal() {
   const modal = document.getElementById('meld-modal');
-  if (modal.classList.contains('visible')) return;
   modal.classList.add('visible');
   const content = document.getElementById('meld-modal-content');
   content.innerHTML = '';
   for (const pos of POSITIONS) {
-    const name  = playerMap[pos]?.name || pos;
-    const total = G.meld?.[pos] ?? 0;
-    const brk   = G.meldBreak?.[pos] ?? [];
+    const total = V.meld?.[pos] ?? 0;
+    const brk   = V.meldBreak?.[pos] ?? [];
     const div   = document.createElement('div');
     div.className = 'meld-modal-player';
-    div.innerHTML = `<div class="meld-modal-name">${name} (${pos.toUpperCase()})</div>
+    div.innerHTML = `<div class="meld-modal-name">${escapeHtml(playerName(pos))} (${pos.toUpperCase()})</div>
       <div class="meld-modal-total">${total} pts</div>
       <div class="meld-modal-breakdown">${brk.map(([l,v])=>`${l}: ${v}`).join('<br>')||'No meld'}</div>`;
     content.appendChild(div);
   }
-  const partner  = partnerOf(G.highBidder);
-  const teamMeld = (G.meld?.[G.highBidder]??0) + (G.meld?.[partner]??0);
+  const partner  = partnerOf(V.highBidder);
+  const teamMeld = (V.meld?.[V.highBidder]??0) + (V.meld?.[partner]??0);
   document.getElementById('meld-modal-note').textContent =
-    `Team meld: ${teamMeld} · Bid: ${G.highBid} · Need ${Math.max(0,G.highBid-teamMeld)} more from tricks`;
+    `Bid team meld: ${teamMeld} · Bid: ${V.highBid} · ` +
+    (teamMeld >= V.highBid ? 'Bid already covered by meld (must still win a trick)'
+                           : `Need ${V.highBid - teamMeld} more from tricks`);
 }
 function closeMeldModal() {
   document.getElementById('meld-modal').classList.remove('visible');
-  // Immediately advance to playing phase (don't wait for 6s timeout)
-  if (isHost && G && G.phase === 'meld') {
-    startPlaying(G);
-    broadcastGameState();
-  }
-  renderMeldSidebar();
+  sendToHost({ action:'begin_play' });
 }
 
 function showRoundModal() {
   document.getElementById('round-modal').classList.add('visible');
-  const r = G.lastRoundResult;
+  const r = V.lastRoundResult;
   if (!r) return;
-  const bidderName = playerMap[r.highBidder]?.name || r.highBidder;
   document.getElementById('round-title').innerHTML = r.bidMet
     ? `<span class="round-made">✓ Bid Made</span>`
-    : `<span class="round-missed">✗ Bid Missed — Set Back</span>`;
+    : `<span class="round-missed">✗ Bid Missed — Set Back ${r.highBid}</span>`;
+  const bidTeamNames  = POSITIONS.filter(p=>teamOf(p)===r.bidTeam).map(playerName).join(' & ');
+  const enemTeamNames = POSITIONS.filter(p=>teamOf(p)===r.otherTeam).map(playerName).join(' & ');
   const rows = [
-    ['Bidder', `${bidderName} (${r.highBidder.toUpperCase()})`],
-    ['Trump', SUIT_SYM[r.trump]],
-    ['Bid', r.highBid],
-    ['Bid team meld', r.teamMeld],
-    ['Bid team tricks', r.bidTrickPts],
-    ['Bid team total', r.bidTotal],
-    ['Other team meld', r.enemMeld],
-    ['Other team tricks', r.enemTrickPts],
+    ['Bidder', `${playerName(r.highBidder)} · ${SUIT_SYM[r.trump]} trump · bid ${r.highBid}`],
+    [`${bidTeamNames} meld`, r.teamMeld],
+    [`${bidTeamNames} tricks`, `${r.bidTrickPts} pts (${r.bidTricksWon} tricks)`],
+    [`${bidTeamNames} total`, r.bidMet ? `+${r.bidTotal}` : `−${r.highBid} (set)`],
+    [`${enemTeamNames} meld`, r.enemMeld],
+    [`${enemTeamNames} tricks`, `${r.enemTrickPts} pts (${r.enemTricksWon} tricks)`],
+    [`${enemTeamNames} total`, `+${r.enemTotal}`],
     ['NS score', r.nsScore],
     ['EW score', r.ewScore],
   ];
+  if (r.bidTricksWon === 0 || r.enemTricksWon === 0) {
+    rows.splice(1, 0, ['Note', 'A team with no tricks scores nothing']);
+  }
   document.getElementById('round-content').innerHTML =
-    rows.map(([l,v])=>`<div class="round-row"><span class="rl">${l}</span><span class="rv">${v}</span></div>`).join('');
+    rows.map(([l,v])=>`<div class="round-row"><span class="rl">${escapeHtml(l)}</span><span class="rv">${escapeHtml(v)}</span></div>`).join('');
   document.getElementById('next-round-btn').style.display = isHost ? 'inline-flex' : 'none';
+  document.getElementById('round-wait-note').style.display = isHost ? 'none' : 'block';
 }
 
 function showDealReview() {
   document.getElementById('round-modal').classList.remove('visible');
+  document.getElementById('gameover-modal').classList.remove('visible');
   document.getElementById('review-modal').classList.add('visible');
-  document.getElementById('review-round-num').textContent = G.roundNum - 1;
+  document.getElementById('review-round-num').textContent = V.lastRoundResult?.roundNum ?? V.roundNum;
   const content = document.getElementById('review-content');
   content.innerHTML = '';
   for (const pos of POSITIONS) {
-    const name   = playerMap[pos]?.name || pos;
-    const hand   = G.dealtHands?.[pos] || [];
+    const hand   = V.dealtHands?.[pos];
     const isArr  = Array.isArray(hand);
     const sorted = isArr ? [...hand] : [];
-    if (isArr) sortHand(sorted, G.trump);
+    if (isArr) sortHand(sorted, V.trump);
     const div = document.createElement('div');
     div.className='review-hand-block';
-    div.innerHTML=`<div class="review-hand-name">${name} (${pos.toUpperCase()})</div>
+    div.innerHTML=`<div class="review-hand-name">${escapeHtml(playerName(pos))} (${pos.toUpperCase()})</div>
       <div class="review-cards">${isArr
         ? sorted.map(c=>`<span class="review-card${RED_SUITS.has(c.s)?' red':''}">${c.r}${SUIT_SYM[c.s]}</span>`).join('')
         : '<em style="opacity:0.4">hidden</em>'}</div>`;
@@ -560,16 +524,19 @@ function showDealReview() {
 }
 function closeReviewModal() {
   document.getElementById('review-modal').classList.remove('visible');
-  document.getElementById('round-modal').classList.add('visible');
+  // Return to whichever summary is still current (the host may have moved on)
+  if (V?.phase !== 'round_over') return;
+  if (V?.winner) document.getElementById('gameover-modal').classList.add('visible');
+  else document.getElementById('round-modal').classList.add('visible');
 }
 
 function showGameOver() {
+  document.getElementById('round-modal').classList.remove('visible');
   document.getElementById('gameover-modal').classList.add('visible');
-  const ns = POSITIONS.filter(p=>teamOf(p)==='ns').map(p=>playerMap[p]?.name||p).join(' & ');
-  const ew = POSITIONS.filter(p=>teamOf(p)==='ew').map(p=>playerMap[p]?.name||p).join(' & ');
-  document.getElementById('winner-text').textContent = `${G.winner==='ns'?ns:ew} Win!`;
+  const winners = POSITIONS.filter(p=>teamOf(p)===V.winner).map(playerName).join(' & ');
+  document.getElementById('winner-text').textContent = `${winners} Win!`;
   document.getElementById('gameover-msg').textContent =
-    `Final Score — NS: ${G.scores.ns}  ·  EW: ${G.scores.ew}`;
+    `Final Score — NS: ${V.scores.ns}  ·  EW: ${V.scores.ew}`;
 }
 
 function selectTrump(suit) {
@@ -578,14 +545,29 @@ function selectTrump(suit) {
 }
 
 function nextRound() {
-  if (isHost) startNextRound(); else sendToHost({ action:'next_round' });
   document.getElementById('round-modal').classList.remove('visible');
+  sendToHost({ action:'next_round' });
+}
+
+// ── LOG ───────────────────────────────────────────────────────
+
+function renderLog() {
+  if (V.lastLog && V.lastLog.seq > lastLogSeq) {
+    lastLogSeq = V.lastLog.seq;
+    log(V.lastLog.msg);
+  }
 }
 
 function log(msg) {
-  const el   = document.getElementById('log');
+  const el = document.getElementById('log');
+  if (!el) return;
   const line = document.createElement('div');
   line.textContent = msg;
   el.prepend(line);
   while (el.children.length > 7) el.removeChild(el.lastChild);
+}
+
+function escapeHtml(s) {
+  return String(s).replace(/[&<>"']/g, ch =>
+    ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch]));
 }

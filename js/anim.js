@@ -11,11 +11,11 @@
 //    animDeal(hands)              — deal 12 cards to each seat
 //    animPlayCard(card, fromPos)  — card flies from hand to trick slot
 //    animTrickSweep(winnerPos, trickCards) — collect trick to winner
-//    animPassCards(cards, fromPos, toPos)  — 3 cards arc to partner
-//    animReceiveCards(cards, toPos)        — 3 cards materialize in hand
-//    rebuildHandFan(pos)          — re-layout hand fan after state change
-//    getCardEl(cardKey)           — lookup live card element
-//    removeCardEl(cardKey)        — remove from DOM + registry
+//    animPassCards(cards, fromPos, toPos)  — my 3 cards arc to a seat
+//    animFlyBacks(fromPos, toPos, n)       — n card backs fly between seats
+//    rebuildHandFan(pos, cards, opts)      — re-layout a hand fan
+//    rebuildOppStubs(pos, count)  — face-down fan for a hidden hand
+//    cleanupRegistry(validKeys)   — drop card elements no longer in play
 // ══════════════════════════════════════════════════════════════
 
 'use strict';
@@ -39,6 +39,7 @@ const TRICK_RECTS = {};
 
 // ── Layer setup ──────────────────────────────────────────────
 let animLayer = null;
+let _resizeWired = false;
 
 function initAnimLayer() {
   animLayer = document.getElementById('anim-layer');
@@ -50,17 +51,24 @@ function initAnimLayer() {
     `;
     document.getElementById('table').appendChild(animLayer);
   }
-  window.addEventListener('resize', onResize);
+  if (!_resizeWired) {
+    _resizeWired = true;
+    window.addEventListener('resize', onResize);
+  }
   onResize();
 }
 
+let _resizeTimer = null;
 function onResize() {
   for (const pos of ['south','north','west','east']) {
     SEAT_ORIGINS[pos] = getSeatCenter(pos);
+    TRICK_RECTS[pos]  = getTrickSlotRect(pos);
   }
-  for (const pos of ['south','north','west','east']) {
-    TRICK_RECTS[pos] = getTrickSlotRect(pos);
-  }
+  // Re-fan hands against the new table size (debounced)
+  clearTimeout(_resizeTimer);
+  _resizeTimer = setTimeout(() => {
+    if (typeof V !== 'undefined' && V && typeof refreshAllHands === 'function') refreshAllHands();
+  }, 150);
 }
 
 // ── Geometry helpers ─────────────────────────────────────────
@@ -212,24 +220,27 @@ function animMoveTo(el, toX, toY, toRot, opts = {}) {
   return anim;
 }
 
-// Flip a card face-up (or face-down)
+// Flip a card face-up (or face-down).
+// Face state is a visibility swap on the two faces (see .flipped CSS),
+// so it can't be clobbered by the inline position/rotation transforms;
+// the flip look is a scaleX pinch with the face swap at the midpoint.
 function flipCard(el, faceUp = true, duration = 280, delay = 0) {
   return new Promise(resolve => {
+    if (el.classList.contains('flipped') === !faceUp) { resolve(); return; }
+    const base = el.style.transform || '';
     const mid = duration / 2;
     const a1 = el.animate([
-      { transform: el.style.transform + ' rotateY(0deg)' },
-      { transform: el.style.transform + ' rotateY(90deg)' },
+      { transform: base + ' scaleX(1)' },
+      { transform: base + ' scaleX(0.02)' },
     ], { duration: mid, delay, fill: 'forwards', easing: 'ease-in' });
 
     a1.onfinish = () => {
-      if (faceUp) el.classList.remove('flipped');
-      else        el.classList.add('flipped');
-      el.style.transform = el.style.transform.replace(/ rotateY\([^)]+\)/,'');
+      el.classList.toggle('flipped', !faceUp);
       const a2 = el.animate([
-        { transform: el.style.transform + ' rotateY(-90deg)' },
-        { transform: el.style.transform + ' rotateY(0deg)' },
+        { transform: base + ' scaleX(0.02)' },
+        { transform: base + ' scaleX(1)' },
       ], { duration: mid, fill: 'forwards', easing: 'ease-out' });
-      a2.onfinish = () => { a2.cancel(); resolve(); };
+      a2.onfinish = () => { a1.cancel(); a2.cancel(); el.style.transform = base; resolve(); };
     };
   });
 }
@@ -304,7 +315,7 @@ async function animDeal(handsData) {
   `;
   for (let i = 0; i < 5; i++) {
     const stub = document.createElement('div');
-    stub.className = 'anim-card-face anim-card-back';
+    stub.className = 'anim-card-back-flat';
     stub.style.cssText = `position:absolute; inset:${-i/2}px; border-radius:5px;`;
     stub.innerHTML = `<div class="ac-back-pattern"></div>`;
     deckEl.appendChild(stub);
@@ -323,7 +334,7 @@ async function animDeal(handsData) {
     const raw  = handsData[absP];
     if (raw && Array.isArray(raw)) {
       const h = [...raw];
-      sortHand(h, typeof G !== 'undefined' && G ? G.trump : null);
+      sortHand(h, typeof V !== 'undefined' && V ? V.trump : null);
       sortedHands[dp] = h;
     } else {
       sortedHands[dp] = null; // card backs
@@ -463,7 +474,7 @@ function attachHoverEffect(el, basePos, idx, total) {
 // Called after a card is played / received — re-layouts the fan
 
 function rebuildHandFan(dispPos, cardDataList, opts = {}) {
-  const { selKeys = [], legalKeys = [], clickable = false, onCardClick = null } = opts;
+  const { selKeys = [], legalKeys = [], receivedKeys = [], clickable = false, onCardClick = null } = opts;
 
   // Collect existing els for these cards and any stubs
   const baseline  = getHandBaseline(dispPos);
@@ -495,8 +506,9 @@ function rebuildHandFan(dispPos, cardDataList, opts = {}) {
     CARD_REGISTRY[key].el = newEl;
 
     // Mark trump suit cards
-    const isTrump = typeof G !== 'undefined' && G && G.trump && card.s === G.trump;
+    const isTrump = typeof V !== 'undefined' && V && V.trump && card.s === V.trump;
     newEl.classList.toggle('trump-suit', !!isTrump);
+    newEl.classList.toggle('received-anim', receivedKeys.includes(key));
 
     const liftExtra = isSel ? -10 : 0;
     animMoveTo(newEl, p.x, p.y + liftExtra, p.rot, {
@@ -506,8 +518,8 @@ function rebuildHandFan(dispPos, cardDataList, opts = {}) {
       zIndex: 30 + i,
     });
 
-    // In solo mode, any seat can be interactive; in multiplayer, only south
-    const isActiveSeat = (typeof soloMode !== 'undefined' && soloMode) ? clickable : (dispPos === 'south');
+    // Only my own hand (displayed at south) is ever interactive
+    const isActiveSeat = dispPos === 'south';
     if (isActiveSeat) {
       newEl.style.pointerEvents = 'auto';
       const isLegal = legalKeys.length === 0 || legalKeys.includes(key);
@@ -535,10 +547,6 @@ function rebuildHandFan(dispPos, cardDataList, opts = {}) {
 }
 
 function rebuildOppStubs(dispPos, count) {
-  // In solo mode, opponent hands are real face-up cards managed by rebuildHandFan
-  // called from refreshAllHands — skip stub generation
-  if (typeof soloMode !== 'undefined' && soloMode) return;
-
   // Remove old stubs
   animLayer.querySelectorAll(`[data-stub^="${dispPos}-"]`).forEach(e => e.remove());
 
@@ -641,7 +649,7 @@ async function animTrickSweep(winnerDispPos, trickCardKeys) {
   await Promise.all(promises);
 }
 
-// ── PASS CARDS ANIMATION ──────────────────────────────────────
+// ── PASS CARDS ANIMATION (my own selected cards fly away) ────
 
 async function animPassCards(cards, fromDispPos, toDispPos) {
   const toBaseline = getHandBaseline(toDispPos);
@@ -661,8 +669,12 @@ async function animPassCards(cards, fromDispPos, toDispPos) {
           duration: 500,
           easing: 'cubic-bezier(0.22,1,0.36,1)',
           onComplete: () => {
-            // Flip face-down as it arrives (partner can't peek)
-            flipCard(el, false, 200).then(resolve);
+            // Flip face-down as it arrives (receiver's hand is hidden from us)
+            flipCard(el, false, 200).then(() => {
+              el.remove();
+              delete CARD_REGISTRY[key];
+              resolve();
+            });
           }
         });
       }, i * 80);
@@ -673,29 +685,28 @@ async function animPassCards(cards, fromDispPos, toDispPos) {
   await Promise.all(promises);
 }
 
-// ── DISCARD ANIMATION ─────────────────────────────────────────
+// ── FLY CARD BACKS (observed pass between two other players) ─
 
-async function animDiscardCards(cards, fromDispPos) {
-  const tc = tableCenter();
+async function animFlyBacks(fromDispPos, toDispPos, n) {
+  const from = getHandBaseline(fromDispPos);
+  const to   = getHandBaseline(toDispPos);
   const promises = [];
-  cards.forEach((card, i) => {
-    const key   = cardKey(card);
-    const entry = CARD_REGISTRY[key];
-    if (!entry) return;
-    const el = entry.el;
-    el.style.zIndex = 65;
-    const p = new Promise(resolve => {
+  for (let i = 0; i < n; i++) {
+    const el = createCardBack();
+    el.style.left   = (from.cx - CARD_W/2 + (i-1)*14) + 'px';
+    el.style.top    = (from.baseY - CARD_H/2) + 'px';
+    el.style.zIndex = 70 + i;
+    animLayer.appendChild(el);
+    promises.push(new Promise(resolve => {
       setTimeout(() => {
-        animMoveTo(el, tc.x + (Math.random()-0.5)*30, tc.y, (Math.random()-0.5)*30, {
-          duration: 380,
-          easing: 'ease-in',
-          scaleEnd: 0,
-          onComplete: () => { el.remove(); delete CARD_REGISTRY[key]; resolve(); }
+        animMoveTo(el, to.cx + (i-1)*14, to.baseY, 0, {
+          duration: 500,
+          easing: 'cubic-bezier(0.22,1,0.36,1)',
+          onComplete: () => { el.remove(); resolve(); }
         });
-      }, i * 60);
-    });
-    promises.push(p);
-  });
+      }, i * 90);
+    }));
+  }
   await Promise.all(promises);
 }
 
@@ -705,6 +716,21 @@ function clearAllCards() {
   animLayer.querySelectorAll('.anim-card, .deck-pile').forEach(e => e.remove());
   for (const key in CARD_REGISTRY) delete CARD_REGISTRY[key];
   animLayer.querySelectorAll('[data-stub]').forEach(e => e.remove());
+}
+
+/** Remove registered card elements whose keys are not in `validKeys`,
+ *  plus any orphaned card nodes left behind by interrupted animations. */
+function cleanupRegistry(validKeys) {
+  for (const key of Object.keys(CARD_REGISTRY)) {
+    if (!validKeys.has(key)) {
+      CARD_REGISTRY[key].el.remove();
+      delete CARD_REGISTRY[key];
+    }
+  }
+  animLayer.querySelectorAll('.anim-card[data-key]').forEach(el => {
+    const k = el.dataset.key;
+    if (!CARD_REGISTRY[k] || CARD_REGISTRY[k].el !== el) el.remove();
+  });
 }
 
 function getCardEl(key) {
@@ -730,7 +756,7 @@ async function animShuffle() {
   // Create two half-decks
   const makeHalf = () => {
     const h = document.createElement('div');
-    h.className = 'anim-card-face anim-card-back';
+    h.className = 'anim-card-back-flat';
     h.style.cssText = `position:absolute; inset:0; border-radius:5px;`;
     h.innerHTML = `<div class="ac-back-pattern"></div>`;
     return h;

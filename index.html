@@ -19,7 +19,7 @@
   <div class="lobby-hero">
     <div class="suit-row" aria-hidden="true">♠ ♥ ♦ ♣</div>
     <h1>Pinochle</h1>
-    <p class="lobby-sub">Single Deck · Partners · 150 Points · Modern Rules</p>
+    <p class="lobby-sub">Single Deck · Partners · First to 150</p>
   </div>
 
   <div class="lobby-panels">
@@ -37,12 +37,12 @@
         <div class="divider"></div>
         <label>Share This Code</label>
         <div id="room-code-display">—</div>
-        <div class="copy-hint">Click to copy</div>
+        <div class="copy-hint">Click to copy the invite link</div>
         <div class="lobby-player-grid" id="lobby-players-list"></div>
         <button class="btn btn-start-game" id="start-btn" onclick="hostStartGame()" style="display:none">
           Deal the Cards &amp; Start Game
         </button>
-        <div id="start-hint" class="status-line" style="display:none">Need 4 players to start</div>
+        <div id="start-hint" class="status-line" style="display:none"></div>
       </div>
     </div>
 
@@ -66,44 +66,44 @@
     </div>
   </div>
 
-  <!-- SOLO TEST -->
+  <!-- PRACTICE VS COMPUTER -->
   <div class="solo-bar">
-    <button class="btn btn-solo" onclick="startSoloMode()">🃏 Solo Test Mode — Play All 4 Hands</button>
-    <span class="solo-hint">No network needed · See all cards · Click each seat's turn</span>
+    <button class="btn btn-solo" onclick="startPracticeSetup()">🃏 Play vs Computer</button>
+    <span class="solo-hint">No network needed · You play South with a computer partner and opponents</span>
   </div>
 
-  <!-- SOLO START PANEL (appears after clicking Solo Test Mode) -->
+  <!-- PRACTICE START PANEL -->
   <div class="panel" id="solo-start-panel" style="display:none; max-width:420px; width:100%">
     <div class="panel-header">
       <span class="panel-num">♣</span>
-      <h2>Solo Test Mode</h2>
+      <h2>Play vs Computer</h2>
     </div>
     <div class="status-line" style="margin-bottom:0.5rem">
-      All 4 seats filled · You control whichever seat's turn it is
+      You sit South. Ruby (North) is your partner; Ace and Jasper are your opponents.
     </div>
     <div class="lobby-player-grid">
-      <div class="lobby-player-slot"><span class="slot-pos">south</span><span class="slot-name">South</span></div>
-      <div class="lobby-player-slot"><span class="slot-pos">west</span><span class="slot-name">West</span></div>
-      <div class="lobby-player-slot"><span class="slot-pos">north</span><span class="slot-name">North</span></div>
-      <div class="lobby-player-slot"><span class="slot-pos">east</span><span class="slot-name">East</span></div>
+      <div class="lobby-player-slot"><span class="slot-pos">south</span><span class="slot-name">You</span></div>
+      <div class="lobby-player-slot"><span class="slot-pos">west</span><span class="slot-name">🤖 Ace</span></div>
+      <div class="lobby-player-slot"><span class="slot-pos">north</span><span class="slot-name">🤖 Ruby</span></div>
+      <div class="lobby-player-slot"><span class="slot-pos">east</span><span class="slot-name">🤖 Jasper</span></div>
     </div>
-    <button class="btn btn-start-game" onclick="startSoloGame()">
+    <button class="btn btn-start-game" onclick="startPracticeGame()">
       Deal the Cards &amp; Start Game
     </button>
   </div>
 
   <!-- rules summary -->
   <details class="rules-accordion">
-    <summary>Modern Rules Summary</summary>
+    <summary>Rules Summary</summary>
     <div class="rules-grid">
-      <div><strong>Deck</strong> Single 48-card (A 10 K Q J 9 × 4 suits)</div>
+      <div><strong>Deck</strong> 48 cards — two each of A 10 K Q J 9 in every suit</div>
       <div><strong>Goal</strong> First team to 150 points wins</div>
-      <div><strong>Bidding</strong> Min 25, bid by 1. Stick the dealer.</div>
-      <div><strong>Pass</strong> Declarer passes 3 cards blind; partner discards 3</div>
-      <div><strong>Must Head</strong> You must beat the current winning card if able</div>
-      <div><strong>Bidder Goes Out</strong> Bid team wins tie-breaker at 150</div>
-      <div><strong>Review</strong> After each round, see all 4 original hands</div>
-      <div><strong>Points</strong> A=11, 10=10, K=4, Q=3, J=2, last trick=1 (60 in play)</div>
+      <div><strong>Bidding</strong> Min 25, raise by 1, pass = out. Stick the dealer at 25.</div>
+      <div><strong>Trump &amp; Pass</strong> Bid winner names trump; partner passes them 3 cards, bidder returns 3</div>
+      <div><strong>Meld</strong> Run 15 · Aces 10 · Kings 8 · Queens 6 · Jacks 4 · Pinochle 4 (dbl 30) · Royal marriage 4 · Marriage 2 · Dix 1</div>
+      <div><strong>Play</strong> Bidder leads. Follow suit and beat the winning card if you can; trump if void.</div>
+      <div><strong>Counters</strong> Each ace, ten and king taken = 1 pt; last trick +1 (25 in play)</div>
+      <div><strong>Scoring</strong> Make the bid: score meld + tricks. Miss it: lose the bid. No tricks = no score. Bidder goes out first at 150.</div>
     </div>
   </details>
 </div>
@@ -141,7 +141,6 @@
         <video autoplay playsinline></video>
         <div class="seat-label" id="name-north">—</div>
       </div>
-      <div class="opp-hand" id="hand-north"></div>
       <div class="bid-badge" id="badge-north"></div>
     </div>
     <div class="seat" id="seat-west" data-pos="west">
@@ -150,7 +149,6 @@
         <video autoplay playsinline></video>
         <div class="seat-label" id="name-west">—</div>
       </div>
-      <div class="opp-hand" id="hand-west"></div>
       <div class="bid-badge" id="badge-west"></div>
     </div>
     <div class="seat" id="seat-east" data-pos="east">
@@ -159,7 +157,6 @@
         <video autoplay playsinline></video>
         <div class="seat-label" id="name-east">—</div>
       </div>
-      <div class="opp-hand" id="hand-east"></div>
       <div class="bid-badge" id="badge-east"></div>
     </div>
     <div class="seat" id="seat-south" data-pos="south">
@@ -186,7 +183,7 @@
       <div class="trick-slot" id="trick-south" data-pos="south"></div>
     </div>
 
-    <!-- MY HAND -->
+    <!-- MY HAND (anchor; cards render on the anim layer) -->
     <div id="my-hand"></div>
 
     <!-- ACTION PANEL -->
@@ -198,28 +195,18 @@
       <div id="meld-rows"></div>
     </div>
 
-    <!-- PASS PANEL (declarer) -->
+    <!-- PASS PANEL (bidder's partner) -->
     <div id="pass-panel" style="display:none">
-      <div class="pass-title">Select 3 cards to pass to partner</div>
+      <div class="pass-title" id="pass-title">Pass 3 cards to your partner</div>
       <div id="pass-selected-display"></div>
       <button class="btn btn-sm" id="pass-confirm-btn" onclick="confirmPass()" disabled>Pass 3 Cards →</button>
     </div>
 
-    <!-- DISCARD PANEL (partner after receiving) -->
-    <div id="discard-panel" style="display:none">
-      <div class="pass-title">Partner passed you 3 cards. Discard 3.</div>
-      <div id="discard-selected-display"></div>
-      <button class="btn btn-sm" id="discard-confirm-btn" onclick="confirmDiscard()" disabled>Discard 3 →</button>
-    </div>
-
-    <!-- SOLO MODE SEAT SWITCHER -->
-    <div id="solo-switcher" style="display:none">
-      <span class="solo-sw-label">Playing as:</span>
-      <button class="solo-seat-btn active" data-seat="south" onclick="soloSwitchSeat('south')">South</button>
-      <button class="solo-seat-btn" data-seat="west"  onclick="soloSwitchSeat('west')">West</button>
-      <button class="solo-seat-btn" data-seat="north" onclick="soloSwitchSeat('north')">North</button>
-      <button class="solo-seat-btn" data-seat="east"  onclick="soloSwitchSeat('east')">East</button>
-      <span id="solo-turn-indicator" class="solo-turn-ind"></span>
+    <!-- RETURN PANEL (bidder sends 3 back) -->
+    <div id="return-panel" style="display:none">
+      <div class="pass-title" id="return-title">Return 3 cards to your partner</div>
+      <div id="return-selected-display"></div>
+      <button class="btn btn-sm" id="return-confirm-btn" onclick="confirmReturn()" disabled>Return 3 Cards →</button>
     </div>
 
     <!-- LOG -->
@@ -269,6 +256,9 @@
       <button class="btn btn-outline" onclick="showDealReview()">Review Hands 🃏</button>
       <button class="btn" id="next-round-btn" onclick="nextRound()">Next Round →</button>
     </div>
+    <div id="round-wait-note" class="status-line" style="display:none;margin-top:0.5rem">
+      Waiting for the host to start the next round…
+    </div>
   </div>
 </div>
 
@@ -288,13 +278,17 @@
     <div class="winner-crown">♛</div>
     <div class="modal-title" id="winner-text">Team Wins!</div>
     <p id="gameover-msg"></p>
-    <button class="btn" onclick="location.reload()" style="margin-top:0.5rem">New Game</button>
+    <div style="display:flex;gap:0.75rem;justify-content:center;margin-top:0.75rem;flex-wrap:wrap">
+      <button class="btn btn-outline" onclick="showDealReview()">Review Hands 🃏</button>
+      <button class="btn" onclick="location.reload()">New Game</button>
+    </div>
   </div>
 </div>
 
 <script src="js/cards.js"></script>
 <script src="js/meld.js"></script>
 <script src="js/rules.js"></script>
+<script src="js/bots.js"></script>
 <script src="js/network.js"></script>
 <script src="js/anim.js"></script>
 <script src="js/game.js"></script>
