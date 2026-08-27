@@ -39,6 +39,7 @@ const TRICK_RECTS = {};
 
 // ── Layer setup ──────────────────────────────────────────────
 let animLayer = null;
+let _resizeWired = false;
 
 function initAnimLayer() {
   animLayer = document.getElementById('anim-layer');
@@ -50,7 +51,10 @@ function initAnimLayer() {
     `;
     document.getElementById('table').appendChild(animLayer);
   }
-  window.addEventListener('resize', onResize);
+  if (!_resizeWired) {
+    _resizeWired = true;
+    window.addEventListener('resize', onResize);
+  }
   onResize();
 }
 
@@ -323,7 +327,7 @@ async function animDeal(handsData) {
     const raw  = handsData[absP];
     if (raw && Array.isArray(raw)) {
       const h = [...raw];
-      sortHand(h, typeof G !== 'undefined' && G ? G.trump : null);
+      sortHand(h, typeof V !== 'undefined' && V ? V.trump : null);
       sortedHands[dp] = h;
     } else {
       sortedHands[dp] = null; // card backs
@@ -463,7 +467,7 @@ function attachHoverEffect(el, basePos, idx, total) {
 // Called after a card is played / received — re-layouts the fan
 
 function rebuildHandFan(dispPos, cardDataList, opts = {}) {
-  const { selKeys = [], legalKeys = [], clickable = false, onCardClick = null } = opts;
+  const { selKeys = [], legalKeys = [], receivedKeys = [], clickable = false, onCardClick = null } = opts;
 
   // Collect existing els for these cards and any stubs
   const baseline  = getHandBaseline(dispPos);
@@ -495,8 +499,9 @@ function rebuildHandFan(dispPos, cardDataList, opts = {}) {
     CARD_REGISTRY[key].el = newEl;
 
     // Mark trump suit cards
-    const isTrump = typeof G !== 'undefined' && G && G.trump && card.s === G.trump;
+    const isTrump = typeof V !== 'undefined' && V && V.trump && card.s === V.trump;
     newEl.classList.toggle('trump-suit', !!isTrump);
+    newEl.classList.toggle('received-anim', receivedKeys.includes(key));
 
     const liftExtra = isSel ? -10 : 0;
     animMoveTo(newEl, p.x, p.y + liftExtra, p.rot, {
@@ -506,8 +511,8 @@ function rebuildHandFan(dispPos, cardDataList, opts = {}) {
       zIndex: 30 + i,
     });
 
-    // In solo mode, any seat can be interactive; in multiplayer, only south
-    const isActiveSeat = (typeof soloMode !== 'undefined' && soloMode) ? clickable : (dispPos === 'south');
+    // Only my own hand (displayed at south) is ever interactive
+    const isActiveSeat = dispPos === 'south';
     if (isActiveSeat) {
       newEl.style.pointerEvents = 'auto';
       const isLegal = legalKeys.length === 0 || legalKeys.includes(key);
@@ -535,10 +540,6 @@ function rebuildHandFan(dispPos, cardDataList, opts = {}) {
 }
 
 function rebuildOppStubs(dispPos, count) {
-  // In solo mode, opponent hands are real face-up cards managed by rebuildHandFan
-  // called from refreshAllHands — skip stub generation
-  if (typeof soloMode !== 'undefined' && soloMode) return;
-
   // Remove old stubs
   animLayer.querySelectorAll(`[data-stub^="${dispPos}-"]`).forEach(e => e.remove());
 
@@ -641,7 +642,7 @@ async function animTrickSweep(winnerDispPos, trickCardKeys) {
   await Promise.all(promises);
 }
 
-// ── PASS CARDS ANIMATION ──────────────────────────────────────
+// ── PASS CARDS ANIMATION (my own selected cards fly away) ────
 
 async function animPassCards(cards, fromDispPos, toDispPos) {
   const toBaseline = getHandBaseline(toDispPos);
@@ -661,8 +662,12 @@ async function animPassCards(cards, fromDispPos, toDispPos) {
           duration: 500,
           easing: 'cubic-bezier(0.22,1,0.36,1)',
           onComplete: () => {
-            // Flip face-down as it arrives (partner can't peek)
-            flipCard(el, false, 200).then(resolve);
+            // Flip face-down as it arrives (receiver's hand is hidden from us)
+            flipCard(el, false, 200).then(() => {
+              el.remove();
+              delete CARD_REGISTRY[key];
+              resolve();
+            });
           }
         });
       }, i * 80);
@@ -673,29 +678,28 @@ async function animPassCards(cards, fromDispPos, toDispPos) {
   await Promise.all(promises);
 }
 
-// ── DISCARD ANIMATION ─────────────────────────────────────────
+// ── FLY CARD BACKS (observed pass between two other players) ─
 
-async function animDiscardCards(cards, fromDispPos) {
-  const tc = tableCenter();
+async function animFlyBacks(fromDispPos, toDispPos, n) {
+  const from = getHandBaseline(fromDispPos);
+  const to   = getHandBaseline(toDispPos);
   const promises = [];
-  cards.forEach((card, i) => {
-    const key   = cardKey(card);
-    const entry = CARD_REGISTRY[key];
-    if (!entry) return;
-    const el = entry.el;
-    el.style.zIndex = 65;
-    const p = new Promise(resolve => {
+  for (let i = 0; i < n; i++) {
+    const el = createCardBack();
+    el.style.left   = (from.cx - CARD_W/2 + (i-1)*14) + 'px';
+    el.style.top    = (from.baseY - CARD_H/2) + 'px';
+    el.style.zIndex = 70 + i;
+    animLayer.appendChild(el);
+    promises.push(new Promise(resolve => {
       setTimeout(() => {
-        animMoveTo(el, tc.x + (Math.random()-0.5)*30, tc.y, (Math.random()-0.5)*30, {
-          duration: 380,
-          easing: 'ease-in',
-          scaleEnd: 0,
-          onComplete: () => { el.remove(); delete CARD_REGISTRY[key]; resolve(); }
+        animMoveTo(el, to.cx + (i-1)*14, to.baseY, 0, {
+          duration: 500,
+          easing: 'cubic-bezier(0.22,1,0.36,1)',
+          onComplete: () => { el.remove(); resolve(); }
         });
-      }, i * 60);
-    });
-    promises.push(p);
-  });
+      }, i * 90);
+    }));
+  }
   await Promise.all(promises);
 }
 
@@ -705,6 +709,21 @@ function clearAllCards() {
   animLayer.querySelectorAll('.anim-card, .deck-pile').forEach(e => e.remove());
   for (const key in CARD_REGISTRY) delete CARD_REGISTRY[key];
   animLayer.querySelectorAll('[data-stub]').forEach(e => e.remove());
+}
+
+/** Remove registered card elements whose keys are not in `validKeys`,
+ *  plus any orphaned card nodes left behind by interrupted animations. */
+function cleanupRegistry(validKeys) {
+  for (const key of Object.keys(CARD_REGISTRY)) {
+    if (!validKeys.has(key)) {
+      CARD_REGISTRY[key].el.remove();
+      delete CARD_REGISTRY[key];
+    }
+  }
+  animLayer.querySelectorAll('.anim-card[data-key]').forEach(el => {
+    const k = el.dataset.key;
+    if (!CARD_REGISTRY[k] || CARD_REGISTRY[k].el !== el) el.remove();
+  });
 }
 
 function getCardEl(key) {

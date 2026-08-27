@@ -2,36 +2,42 @@
 //  network.js — PeerJS mesh + WebRTC video
 // ══════════════════════════════════════════
 
-let peer       = null;
-let myPeerId   = null;
+let peer        = null;
+let myPeerId    = null;
 let localStream = null;
-let mutedAudio = false;
-let mutedVideo = false;
+let mutedAudio  = false;
+let mutedVideo  = false;
 
-// Connection registry: pos -> DataConnection
-const dataConns   = {};  // for host: pos->conn; for clients: 'host'->conn
+// Connection registry: pos -> DataConnection (host) / 'host' -> conn (clients)
+const dataConns   = {};
 // Video calls: peerId -> MediaConnection
 const videoCalls  = {};
-// Remote streams: pos -> MediaStream
+// Remote streams: absolute pos -> MediaStream
 const remoteStreams = {};
 
-/** Init PeerJS with a specific id, returns promise */
+const PEER_OPTS = {
+  host: '0.peerjs.com', port: 443, path: '/', secure: true, debug: 0,
+  config: { iceServers: [
+    { urls: 'stun:stun.l.google.com:19302' },
+    { urls: 'stun:stun1.l.google.com:19302' },
+  ]}
+};
+
+/** Init PeerJS. With an id (host) — falls back to a random id if taken. */
 function initPeer(id) {
   return new Promise((resolve, reject) => {
-    const p = new Peer(id, {
-      host: '0.peerjs.com', port: 443, path: '/',
-      secure: true, debug: 0,
-      config: { iceServers: [
-        { urls: 'stun:stun.l.google.com:19302' },
-        { urls: 'stun:stun1.l.google.com:19302' },
-      ]}
+    const p = id ? new Peer(id, PEER_OPTS) : new Peer(PEER_OPTS);
+    let settled = false;
+    p.on('open', rid => { if (!settled) { settled = true; myPeerId = rid; resolve(p); } });
+    p.on('error', err => {
+      if (settled) { console.warn('peer error', err); return; }
+      settled = true;
+      reject(err);
     });
-    p.on('open',  id  => { myPeerId = id; resolve(p); });
-    p.on('error', err => reject(err));
   });
 }
 
-/** Acquire camera + microphone */
+/** Acquire camera + microphone (best effort) */
 async function startLocalMedia() {
   try {
     localStream = await navigator.mediaDevices.getUserMedia({ video:true, audio:true });
@@ -47,20 +53,9 @@ function sendConn(conn, msg) {
   try { conn.send(msg); } catch(e) { console.warn('send error', e); }
 }
 
-/** Host broadcasts to all connected players */
-function broadcastAll(msg) {
-  for (const conn of Object.values(dataConns)) sendConn(conn, msg);
-}
-function broadcastExcept(exceptPos, msg) {
-  for (const [pos, conn] of Object.entries(dataConns)) {
-    if (pos !== exceptPos) sendConn(conn, msg);
-  }
-}
-
-/** Client sends to host */
+/** Client sends to host (host processes its own actions locally) */
 function sendToHost(msg) {
   if (isHost) {
-    // Host processes locally
     onHostReceive(msg, myPos);
   } else {
     const conn = dataConns['host'];
@@ -68,25 +63,37 @@ function sendToHost(msg) {
   }
 }
 
-/** Setup a DataConnection for receiving messages */
+/** Route incoming data messages */
 function wireDataConn(conn, fromLabel) {
   conn.on('data', msg => {
     if (isHost) {
-      onHostReceive(msg, fromLabel || conn._peerLabel);
+      if (msg && msg.action) onHostReceive(msg, fromLabel || conn._peerLabel);
     } else {
-      onClientReceive(msg);
+      if (msg && msg.type) onClientReceive(msg);
     }
   });
-  conn.on('close', () => {
-    log(`Connection closed: ${fromLabel}`);
-  });
-  conn.on('error', e => console.warn('conn error', e));
+  conn.on('close', () => onConnClosed(fromLabel || conn._peerLabel));
+  conn.on('error', e => console.warn('DataConn error:', e));
+}
+
+// ── Video mesh ────────────────────────────────────────────────
+// The newest joiner calls every existing peer (host + clients),
+// so each pair gets exactly one media connection.
+
+function connectVideoMesh() {
+  if (!peer) return;
+  for (const [pos, info] of Object.entries(playerMap)) {
+    if (!info || info.bot || pos === myPos || !info.peerId) continue;
+    if (videoCalls[info.peerId]) continue;
+    callPeer(info.peerId, pos);
+  }
 }
 
 /** Place a video call to a remote peer */
 function callPeer(remotePeerId, remotePos) {
   if (!localStream || !peer) return;
   const call = peer.call(remotePeerId, localStream, { metadata: { pos: myPos } });
+  if (!call) return;
   videoCalls[remotePeerId] = call;
   call.on('stream', stream => { remoteStreams[remotePos] = stream; attachVideo(remotePos, stream); });
   call.on('error', e => console.warn('call error', e));
@@ -95,30 +102,34 @@ function callPeer(remotePeerId, remotePos) {
 /** Answer incoming video call */
 function answerCall(call) {
   call.answer(localStream || undefined);
-  const fromPos = call.metadata?.pos;
+  videoCalls[call.peer] = call;
   call.on('stream', stream => {
-    if (fromPos) { remoteStreams[fromPos] = stream; attachVideo(fromPos, stream); }
-    else {
-      // try to match by peerId
+    let fromPos = call.metadata?.pos;
+    if (!fromPos) {
       for (const [p, info] of Object.entries(playerMap)) {
-        if (info && info.peerId === call.peer) { remoteStreams[p]=stream; attachVideo(p,stream); break; }
+        if (info && info.peerId === call.peer) { fromPos = p; break; }
       }
     }
+    if (fromPos) { remoteStreams[fromPos] = stream; attachVideo(fromPos, stream); }
   });
-  videoCalls[call.peer] = call;
+  call.on('error', e => console.warn('call error', e));
 }
 
 /** Attach a remote MediaStream to the correct seat video element */
 function attachVideo(absPos, stream) {
-  const dispPos = absToDisplay(absPos);
-  const seat = document.getElementById('seat-' + dispPos);
+  const seat = document.getElementById('seat-' + absToDisplay(absPos));
   if (!seat) return;
-  const wrap = seat.querySelector('.seat-video-wrap');
+  const wrap  = seat.querySelector('.seat-video-wrap');
   const noVid = wrap.querySelector('.no-video');
   let vid = wrap.querySelector('video');
   if (!vid) { vid = document.createElement('video'); vid.autoplay=true; vid.playsInline=true; wrap.prepend(vid); }
   vid.srcObject = stream;
   if (noVid) noVid.style.display = 'none';
+}
+
+/** Re-attach all video streams (seat rotation happens when myPos is assigned) */
+function refreshAllVideos() {
+  for (const [pos, stream] of Object.entries(remoteStreams)) attachVideo(pos, stream);
 }
 
 function toggleMute() {
