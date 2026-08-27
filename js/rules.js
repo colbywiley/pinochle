@@ -18,6 +18,13 @@
 const POSITIONS = ['south','west','north','east']; // rotation order (clockwise)
 const GOAL      = 150;
 const MIN_BID   = 25;
+const MAX_BID   = 500; // sanity ceiling only — far above any makeable hand
+
+/** Is this a well-formed card object from a client? */
+function isCardShape(c) {
+  return !!c && typeof c === 'object' &&
+    RANKS.includes(c.r) && SUITS.includes(c.s);
+}
 
 function teamOf(pos)    { return (pos==='north'||pos==='south') ? 'ns' : 'ew'; }
 function partnerOf(pos) { return {south:'north',north:'south',east:'west',west:'east'}[pos]; }
@@ -90,7 +97,7 @@ function processBid(state, fromPos, amount) {
     if (!Number.isInteger(amount)) return { ok:false, error:'Bid must be a whole number' };
     const minAllowed = Math.max(MIN_BID, state.highBid + 1);
     if (amount < minAllowed) return { ok:false, error:`Minimum bid is ${minAllowed}` };
-    if (amount > 99) return { ok:false, error:'Maximum bid is 99' };
+    if (amount > MAX_BID) return { ok:false, error:`Maximum bid is ${MAX_BID}` };
     state.highBid    = amount;
     state.highBidder = fromPos;
   }
@@ -144,18 +151,20 @@ function processTrump(state, fromPos, suit) {
 
 // ── PASSING ──────────────────────────────────────────────────────────────────
 
-/** Move `cards` from one hand to another; returns false if any card missing */
+/** Move `cards` from one hand to another. Validates everything before
+ *  mutating anything, so a bad request can never lose or duplicate cards.
+ *  Returns the moved cards, or false. */
 function moveCards(state, fromPos, toPos, cards) {
-  const taken = [];
+  const hand = state.hands[fromPos];
+  const used = new Set();
   for (const pc of cards) {
-    const idx = indexOfCard(state.hands[fromPos], pc);
-    if (idx === -1) {
-      // put back anything already removed
-      state.hands[fromPos].push(...taken);
-      return false;
-    }
-    taken.push(state.hands[fromPos].splice(idx, 1)[0]);
+    if (!isCardShape(pc)) return false;
+    let idx = hand.findIndex((c, i) => !used.has(i) && cardKey(c) === cardKey(pc));
+    if (idx === -1) idx = hand.findIndex((c, i) => !used.has(i) && sameCard(c, pc));
+    if (idx === -1) return false;
+    used.add(idx);
   }
+  const taken = [...used].sort((a, b) => b - a).map(i => hand.splice(i, 1)[0]).reverse();
   state.hands[toPos].push(...taken);
   return taken;
 }
@@ -215,6 +224,7 @@ function startPlaying(state) {
  */
 function processPlayCard(state, fromPos, card) {
   if (state.phase !== 'playing') return { ok:false, error:'Not playing phase' };
+  if (!isCardShape(card))        return { ok:false, error:'Invalid card' };
 
   const expectedPlayer = nextToPlay(state);
   if (expectedPlayer !== fromPos) return { ok:false, error:`It is ${expectedPlayer}'s turn` };

@@ -58,13 +58,17 @@ function initAnimLayer() {
   onResize();
 }
 
+let _resizeTimer = null;
 function onResize() {
   for (const pos of ['south','north','west','east']) {
     SEAT_ORIGINS[pos] = getSeatCenter(pos);
+    TRICK_RECTS[pos]  = getTrickSlotRect(pos);
   }
-  for (const pos of ['south','north','west','east']) {
-    TRICK_RECTS[pos] = getTrickSlotRect(pos);
-  }
+  // Re-fan hands against the new table size (debounced)
+  clearTimeout(_resizeTimer);
+  _resizeTimer = setTimeout(() => {
+    if (typeof V !== 'undefined' && V && typeof refreshAllHands === 'function') refreshAllHands();
+  }, 150);
 }
 
 // ── Geometry helpers ─────────────────────────────────────────
@@ -216,24 +220,27 @@ function animMoveTo(el, toX, toY, toRot, opts = {}) {
   return anim;
 }
 
-// Flip a card face-up (or face-down)
+// Flip a card face-up (or face-down).
+// Face state is a visibility swap on the two faces (see .flipped CSS),
+// so it can't be clobbered by the inline position/rotation transforms;
+// the flip look is a scaleX pinch with the face swap at the midpoint.
 function flipCard(el, faceUp = true, duration = 280, delay = 0) {
   return new Promise(resolve => {
+    if (el.classList.contains('flipped') === !faceUp) { resolve(); return; }
+    const base = el.style.transform || '';
     const mid = duration / 2;
     const a1 = el.animate([
-      { transform: el.style.transform + ' rotateY(0deg)' },
-      { transform: el.style.transform + ' rotateY(90deg)' },
+      { transform: base + ' scaleX(1)' },
+      { transform: base + ' scaleX(0.02)' },
     ], { duration: mid, delay, fill: 'forwards', easing: 'ease-in' });
 
     a1.onfinish = () => {
-      if (faceUp) el.classList.remove('flipped');
-      else        el.classList.add('flipped');
-      el.style.transform = el.style.transform.replace(/ rotateY\([^)]+\)/,'');
+      el.classList.toggle('flipped', !faceUp);
       const a2 = el.animate([
-        { transform: el.style.transform + ' rotateY(-90deg)' },
-        { transform: el.style.transform + ' rotateY(0deg)' },
+        { transform: base + ' scaleX(0.02)' },
+        { transform: base + ' scaleX(1)' },
       ], { duration: mid, fill: 'forwards', easing: 'ease-out' });
-      a2.onfinish = () => { a2.cancel(); resolve(); };
+      a2.onfinish = () => { a1.cancel(); a2.cancel(); el.style.transform = base; resolve(); };
     };
   });
 }
@@ -308,7 +315,7 @@ async function animDeal(handsData) {
   `;
   for (let i = 0; i < 5; i++) {
     const stub = document.createElement('div');
-    stub.className = 'anim-card-face anim-card-back';
+    stub.className = 'anim-card-back-flat';
     stub.style.cssText = `position:absolute; inset:${-i/2}px; border-radius:5px;`;
     stub.innerHTML = `<div class="ac-back-pattern"></div>`;
     deckEl.appendChild(stub);
@@ -749,7 +756,7 @@ async function animShuffle() {
   // Create two half-decks
   const makeHalf = () => {
     const h = document.createElement('div');
-    h.className = 'anim-card-face anim-card-back';
+    h.className = 'anim-card-back-flat';
     h.style.cssText = `position:absolute; inset:0; border-radius:5px;`;
     h.innerHTML = `<div class="ac-back-pattern"></div>`;
     return h;

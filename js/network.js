@@ -37,12 +37,14 @@ function initPeer(id) {
   });
 }
 
-/** Acquire camera + microphone (best effort) */
+/** Acquire camera + microphone (best effort). If permission arrives
+ *  late, (re)establish outgoing calls so peers get our stream. */
 async function startLocalMedia() {
   try {
     localStream = await navigator.mediaDevices.getUserMedia({ video:true, audio:true });
     const vid = document.getElementById('local-video');
     if (vid) { vid.srcObject = localStream; document.getElementById('local-no-video').style.display='none'; }
+    connectVideoMesh();
   } catch(e) {
     console.warn('Media unavailable:', e);
   }
@@ -77,24 +79,40 @@ function wireDataConn(conn, fromLabel) {
 }
 
 // ── Video mesh ────────────────────────────────────────────────
-// The newest joiner calls every existing peer (host + clients),
-// so each pair gets exactly one media connection.
+// The newest joiner calls every existing peer. A peer with no
+// camera can't initiate (PeerJS calls need a stream), so existing
+// peers also try the other direction after a grace period — a
+// stream-less player then answers receive-only and still gets
+// everyone's video. Late camera permission re-calls with a stream.
+
+const sentStreamTo = new Set(); // peer ids that have received our stream
 
 function connectVideoMesh() {
   if (!peer) return;
   for (const [pos, info] of Object.entries(playerMap)) {
     if (!info || info.bot || pos === myPos || !info.peerId) continue;
-    if (videoCalls[info.peerId]) continue;
+    if (localStream ? sentStreamTo.has(info.peerId) : true) continue;
     callPeer(info.peerId, pos);
   }
 }
 
-/** Place a video call to a remote peer */
+/** If no call exists with this peer after `delay`, initiate one */
+function ensureVideoCall(peerId, delay = 4000) {
+  setTimeout(() => {
+    if (!peer || !localStream || sentStreamTo.has(peerId) || videoCalls[peerId]) return;
+    for (const [pos, info] of Object.entries(playerMap)) {
+      if (info && info.peerId === peerId) { callPeer(peerId, pos); return; }
+    }
+  }, delay);
+}
+
+/** Place a video call to a remote peer (requires a local stream) */
 function callPeer(remotePeerId, remotePos) {
   if (!localStream || !peer) return;
   const call = peer.call(remotePeerId, localStream, { metadata: { pos: myPos } });
   if (!call) return;
   videoCalls[remotePeerId] = call;
+  sentStreamTo.add(remotePeerId);
   call.on('stream', stream => { remoteStreams[remotePos] = stream; attachVideo(remotePos, stream); });
   call.on('error', e => console.warn('call error', e));
 }
@@ -135,6 +153,22 @@ function attachVideo(absPos, stream) {
 /** Re-attach all video streams (seat rotation happens when myPos is assigned) */
 function refreshAllVideos() {
   for (const [pos, stream] of Object.entries(remoteStreams)) attachVideo(pos, stream);
+}
+
+/** Drop a departed player's stream and restore the seat placeholder */
+function detachVideo(absPos, peerId) {
+  if (peerId) {
+    try { videoCalls[peerId]?.close(); } catch {}
+    delete videoCalls[peerId];
+    sentStreamTo.delete(peerId);
+  }
+  delete remoteStreams[absPos];
+  const seat = document.getElementById('seat-' + absToDisplay(absPos));
+  if (!seat) return;
+  const vid   = seat.querySelector('.seat-video-wrap video');
+  const noVid = seat.querySelector('.no-video');
+  if (vid) vid.srcObject = null;
+  if (noVid) noVid.style.display = '';
 }
 
 function toggleMute() {

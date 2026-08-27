@@ -291,6 +291,11 @@ input[type=text]:focus { border-color: var(--gold); }
   display: flex; flex-direction: column;
   align-items: center; gap: 4px;
 }
+/* Opponents' faces and names stay visible above their card fans;
+   south stays low so your own cards are never covered */
+.seat[data-pos="north"], .seat[data-pos="west"], .seat[data-pos="east"] {
+  z-index: 35;
+}
 .seat.active-turn .seat-video-wrap {
   border-color: #7aff9a;
   box-shadow: 0 0 12px rgba(122,255,154,0.5);
@@ -736,11 +741,11 @@ input[type=text]:focus { border-color: var(--gold); }
 .anim-card.trick-card-anim { z-index: 40; }
 
 /* ── Card faces ── */
+/* Face-down is a visibility swap (.flipped), never a wrapper transform —
+   inline position/rotation transforms would override a transform here. */
 .anim-card-face {
   position: absolute; inset: 0;
   border-radius: 7px;
-  backface-visibility: hidden;
-  -webkit-backface-visibility: hidden;
 }
 
 /* Front face */
@@ -750,7 +755,6 @@ input[type=text]:focus { border-color: var(--gold); }
   font-family: 'Inconsolata', monospace;
   font-weight: 700;
   color: #111;
-  transform: rotateY(0deg);
 }
 .anim-card-front.red { color: var(--red); }
 /* Face card gradient */
@@ -762,13 +766,12 @@ input[type=text]:focus { border-color: var(--gold); }
 .anim-card-back {
   background: linear-gradient(145deg, #1a4a80 0%, #0d2a5a 50%, #081a40 100%);
   border: 2px solid rgba(255,255,255,0.2);
-  transform: rotateY(180deg);
   overflow: hidden;
+  visibility: hidden;
 }
 
-.anim-card.flipped {
-  transform: rotateY(180deg);
-}
+.anim-card.flipped .anim-card-back  { visibility: visible; }
+.anim-card.flipped .anim-card-front { visibility: hidden; }
 
 /* Flat card back (stub cards that never flip — no 3D transforms) */
 .anim-card-back-flat {

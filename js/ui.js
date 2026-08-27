@@ -267,7 +267,7 @@ function renderActionPanel() {
     row.appendChild(label);
 
     const inp = document.createElement('input');
-    inp.type='number'; inp.id='bid-input'; inp.min=minBid; inp.max=99; inp.value=minBid;
+    inp.type='number'; inp.id='bid-input'; inp.min=minBid; inp.max=MAX_BID; inp.value=minBid;
     const getBidAmount = () => { const x = parseInt(inp.value); return isNaN(x) ? minBid : x; };
     inp.addEventListener('keydown', e => { if(e.key==='Enter') sendToHost({ action:'bid', amount:getBidAmount() }); });
     row.appendChild(inp);
@@ -431,11 +431,17 @@ function checkModals() {
   } else document.getElementById('meld-modal').classList.remove('visible');
 
   const roundOverSettled = V.phase === 'round_over' && (V.currentTrick?.length ?? 0) === 0;
-  if (roundOverSettled && !V.winner) showRoundModal();
+  const reviewOpen = document.getElementById('review-modal').classList.contains('visible');
+  if (roundOverSettled && !V.winner) { if (!reviewOpen) showRoundModal(); }
   else document.getElementById('round-modal').classList.remove('visible');
 
-  if (V.winner && roundOverSettled) showGameOver();
+  if (V.winner && roundOverSettled) { if (!reviewOpen) showGameOver(); }
   else if (!V.winner) document.getElementById('gameover-modal').classList.remove('visible');
+
+  // The host may advance the round while someone is still in deal review
+  if (reviewOpen && !roundOverSettled) {
+    document.getElementById('review-modal').classList.remove('visible');
+  }
 }
 
 function showMeldModal() {
@@ -496,6 +502,7 @@ function showRoundModal() {
 
 function showDealReview() {
   document.getElementById('round-modal').classList.remove('visible');
+  document.getElementById('gameover-modal').classList.remove('visible');
   document.getElementById('review-modal').classList.add('visible');
   document.getElementById('review-round-num').textContent = V.lastRoundResult?.roundNum ?? V.roundNum;
   const content = document.getElementById('review-content');
@@ -516,6 +523,8 @@ function showDealReview() {
 }
 function closeReviewModal() {
   document.getElementById('review-modal').classList.remove('visible');
+  // Return to whichever summary is still current (the host may have moved on)
+  if (V?.phase !== 'round_over') return;
   if (V?.winner) document.getElementById('gameover-modal').classList.add('visible');
   else document.getElementById('round-modal').classList.add('visible');
 }

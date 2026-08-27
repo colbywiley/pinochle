@@ -19,6 +19,16 @@ const MELD_DISPLAY_MS  = 9000; // auto-advance to play after this long
 
 function onHostReceive(msg, fromPos) {
   if (!isHost || !G || !fromPos) return;
+  try {
+    handleHostAction(msg, fromPos);
+  } catch (e) {
+    // A malformed message must never take down the host game
+    console.error('host action failed', msg?.action, e);
+    sendError(fromPos, 'Invalid action');
+  }
+}
+
+function handleHostAction(msg, fromPos) {
   let result;
 
   switch (msg.action) {
@@ -64,20 +74,21 @@ function onHostReceive(msg, fromPos) {
       if (!result.ok) { sendError(fromPos, result.error); return; }
       hostLog(result.log);
       if (result.trickDone) {
-        // Broadcast the completed 4-card trick so everyone sees it,
-        // then after a pause broadcast the resolved state.
+        // Settle the outcome immediately (so no message racing the display
+        // window can act on a stale state), then broadcast the completed
+        // 4-card trick, and after a pause the resolved state.
+        if (result.roundOver) G.winner = checkWinner(G);
         const snap = result.trickSnapshot;
         const savedTrick   = G.currentTrick;
         const savedLedSuit = G.trickLedSuit;
         G.currentTrick = snap.cards;
         G.trickLedSuit = snap.ledSuit;
-        animHold = true;
         broadcastGameState();
         G.currentTrick = savedTrick;
         G.trickLedSuit = savedLedSuit;
+        animHold = true; // defer further broadcasts while the trick shows
         setTimeout(() => {
           animHold = false;
-          if (result.roundOver) G.winner = checkWinner(G);
           broadcastGameState();
         }, TRICK_DISPLAY_MS);
       } else {
@@ -86,7 +97,9 @@ function onHostReceive(msg, fromPos) {
       break;
 
     case 'next_round':
-      if (G.phase !== 'round_over' || G.winner) return;
+      // Only the host advances rounds (its button is the only one shown)
+      if (fromPos !== myPos) return;
+      if (G.phase !== 'round_over' || G.winner || animHold) return;
       startNextRound();
       break;
   }
@@ -122,6 +135,9 @@ function hostLog(msg) {
  */
 function broadcastGameState() {
   if (!G) return;
+  // While a finished trick is on display, hold updates — the display-end
+  // timeout always broadcasts the resolved state.
+  if (animHold) return;
   for (const [pos, conn] of Object.entries(dataConns)) {
     if (POSITIONS.includes(pos)) sendConn(conn, { type:'game_state', state: buildPlayerView(G, pos) });
   }
@@ -199,17 +215,19 @@ function maybeScheduleBot() {
     if (!G || animHold) { maybeScheduleBot(); return; }
     const actorNow = currentActor(G);
     if (!actorNow || !isBotSeat(actorNow)) return;
+
+    // If the bot's choice is somehow rejected, fall back to an action
+    // that is legal by construction — a stuck bot must never freeze the game
+    const sigOf = () => G ? [G.phase, G.highBid, JSON.stringify(G.bids), G.currentTrick.length,
+                             POSITIONS.map(p => G.hands[p].length).join(','), G.trump].join('|') : '';
+    const before = sigOf();
     const act = botDecide(G, actorNow);
-    if (act) {
-      const before = G.phase + ':' + JSON.stringify(G.bids) + ':' + G.currentTrick.length;
-      onHostReceive(act, actorNow);
-      // Failsafe: a rejected bot action would otherwise freeze the game.
-      // In the bidding phase a pass is always legal for a non-stuck seat.
-      if (G && G.phase === 'bidding' && currentActor(G) === actorNow &&
-          before === G.phase + ':' + JSON.stringify(G.bids) + ':' + G.currentTrick.length &&
-          act.action === 'bid' && act.amount !== 0) {
-        onHostReceive({ action:'bid', amount: 0 }, actorNow);
-      }
+    if (act) onHostReceive(act, actorNow);
+    if (G && sigOf() === before) {
+      console.warn('bot action rejected — using fallback', actorNow, act?.action);
+      const fb = botFallback(G, actorNow);
+      if (fb) onHostReceive(fb, actorNow);
+      if (G && sigOf() === before) broadcastGameState(); // give humans a live view anyway
     }
   }, delay);
 }
@@ -228,6 +246,8 @@ function onClientReceive(msg) {
     case 'player_joined':
       playerMap[msg.pos] = { name: msg.name, peerId: msg.peerId };
       updateLobbyList();
+      // The joiner normally calls us; if they can't (no camera), call them
+      ensureVideoCall(msg.peerId);
       break;
 
     case 'player_update':
@@ -235,6 +255,7 @@ function onClientReceive(msg) {
       break;
 
     case 'player_left':
+      detachVideo(msg.pos, playerMap[msg.pos]?.peerId);
       playerMap[msg.pos] = null;
       updateLobbyList();
       break;
@@ -257,7 +278,11 @@ function onClientReceive(msg) {
       break;
 
     case 'error':
-      log('⚠ ' + msg.error);
+      if (!document.getElementById('game').classList.contains('active')) {
+        setStatus('join', '⚠ ' + msg.error);
+      } else {
+        log('⚠ ' + msg.error);
+      }
       break;
   }
 }

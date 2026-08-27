@@ -47,7 +47,7 @@ function botChooseBid(state, pos) {
                  others.every(p => state.bids[p] === 0);
   if (stuck) return MIN_BID;
 
-  if (minAllowed > 99) return 0; // engine's hard bid ceiling
+  if (minAllowed > MAX_BID) return 0; // engine's hard bid ceiling
 
   // Don't outbid our own partner without a strong hand
   const partnerHasBid = state.highBidder === partnerOf(pos);
@@ -155,6 +155,30 @@ function botChoosePlay(state, pos) {
 }
 
 // ── Dispatch: what would the bot in seat `pos` do right now? ─
+
+/** Last-resort action that is legal by construction — used by the host
+ *  if a bot's chosen action is ever rejected, so the game cannot freeze. */
+function botFallback(state, pos) {
+  switch (state.phase) {
+    case 'bidding': {
+      const others = POSITIONS.filter(p => p !== state.dealer);
+      const stuck = pos === state.dealer && state.highBid === 0 &&
+                    others.every(p => state.bids[p] === 0);
+      return { action:'bid', amount: stuck ? MIN_BID : 0 };
+    }
+    case 'naming_trump':
+      return { action:'name_trump', suit: (state.hands[pos][0] || { s: SUITS[0] }).s };
+    case 'passing':
+      return { action:'pass_cards', cards: state.hands[pos].slice(0, 3) };
+    case 'returning':
+      return { action:'return_cards', cards: state.hands[pos].slice(0, 3) };
+    case 'playing': {
+      const legal = legalPlays(state, pos);
+      return legal.length ? { action:'play_card', card: legal[0] } : null;
+    }
+  }
+  return null;
+}
 
 function botDecide(state, pos) {
   switch (state.phase) {

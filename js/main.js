@@ -50,6 +50,7 @@ async function createRoom() {
   };
   document.getElementById('room-share').style.display = 'block';
   document.getElementById('panel-create').querySelector('.btn').style.display = 'none';
+  document.querySelector('.solo-bar').style.display = 'none'; // no mode-mixing
   setStatus('create','');
   updateLobbyList();
   checkStartHint();
@@ -79,6 +80,7 @@ async function joinRoom() {
     if (err?.type === 'peer-unavailable') setStatus('join','Room not found — check the code.');
   });
   peer.on('call', answerCall);
+  document.querySelector('.solo-bar').style.display = 'none'; // no mode-mixing
   await startLocalMedia();
 
   const conn = peer.connect('pinochle-' + roomCode, {
@@ -99,9 +101,12 @@ async function joinRoom() {
 
 function onIncomingDataConn(conn) {
   conn.on('open', () => {
-    if (G) { sendConn(conn, { type:'error', error:'Game already in progress' }); conn.close(); return; }
+    // Delay the close so the rejection message actually gets delivered
+    const reject = err => { sendConn(conn, { type:'error', error: err }); setTimeout(() => conn.close(), 800); };
+    if (soloMode) { reject('This room is a practice game'); return; }
+    if (G) { reject('Game already in progress'); return; }
     const pos = JOIN_ORDER.find(p => !playerMap[p]);
-    if (!pos) { sendConn(conn, { type:'error', error:'Room is full' }); conn.close(); return; }
+    if (!pos) { reject('Room is full'); return; }
 
     const name = String(conn.metadata?.name || 'Player').slice(0, 16);
     playerMap[pos] = { name, peerId: conn.peer };
@@ -118,6 +123,10 @@ function onIncomingDataConn(conn) {
     }
     updateLobbyList();
     checkStartHint();
+
+    // The joiner normally calls us; if they have no camera they can't,
+    // so initiate from our side after a grace period
+    ensureVideoCall(conn.peer);
   });
 }
 
@@ -139,6 +148,7 @@ function onConnClosed(label) {
   const pos = label;
   if (!POSITIONS.includes(pos) || !playerMap[pos]) return;
   delete dataConns[pos];
+  detachVideo(pos, playerMap[pos].peerId);
 
   if (G && !G.winner) {
     // Mid-game: a bot takes over the seat
@@ -187,6 +197,7 @@ function hostStartGame() {
 // ── PRACTICE VS COMPUTER ──────────────────────────────────────────────────────
 
 function startPracticeSetup() {
+  if (peer || G) return; // never mix practice with a live network session
   soloMode = true;
   isHost   = true;
   myPos    = 'south';
