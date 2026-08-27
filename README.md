@@ -8,6 +8,10 @@ the computer, so any number of humans from 1–4 works.
 ## Features
 
 - **Single-deck modern rules** — 48-card deck, first team to 150
+- **Customizable house rules** — goal, minimum bid, stick-the-dealer,
+  pass 0/3/4 cards, **peek vs no-peek** passing, must-head / must-trump /
+  follow-suit play, last-trick bonus, and whether trickless meld scores.
+  The host sets them in the lobby; they're remembered for next time.
 - **Computer players** — practice solo, or let CPUs fill empty seats
   (a CPU also takes over if someone disconnects mid-game)
 - **Live video chat** — WebRTC peer-to-peer mesh, no server needed
@@ -33,20 +37,23 @@ Or click **Play vs Computer** for an instant solo game.
 
 ## Rules
 
-| Rule | Detail |
+Defaults shown; ⚙ marks settings the host can change in **House Rules**.
+
+| Rule | Default |
 |---|---|
 | Deck | 48 cards — two each of A 10 K Q J 9 in every suit |
-| Goal | First team to 150 points |
-| Bidding | Min bid 25, raise by at least 1, pass = out |
-| Stick the dealer | If the other three pass, the dealer must bid 25 |
+| Goal ⚙ | First team to 150 points (100 / 150 / 200 / 300) |
+| Bidding ⚙ | Min bid 25 (20 / 25 / 30), raise by at least 1, pass = out |
+| Stick the dealer ⚙ | If the other three pass, the dealer must bid the minimum — or off: four passes throw the hand in |
 | Trump | Bid winner names trump and leads the first trick |
-| Passing | Bidder's partner passes 3 cards to the bidder; bidder returns 3 |
-| Must head | Follow suit and beat the current winning card if able; trump if void; over-trump if able |
+| Passing ⚙ | Bidder's partner passes 3 cards to the bidder; bidder returns 3 (or 4 cards, or no passing) |
+| Peek ⚙ | Peek: bidder sees the passed cards before returning · No peek: bidder must choose the return cards first |
+| Play rules ⚙ | Must head: follow suit and beat the winner if able, trump when void, over-trump if able · or must-trump only · or follow-suit only |
 | Ties | Of two identical cards, the first one played wins |
-| Counters | Each ace, ten and king taken in tricks = 1 point; last trick +1 (25 in play) |
+| Counters ⚙ | Each ace, ten and king taken in tricks = 1 point; last trick +1 or +2 |
 | Making the bid | Bid team scores meld + tricks if they total the bid; otherwise they lose the bid amount |
-| No tricks | A team that wins no tricks scores nothing that hand (meld included) |
-| Bidder goes out | If both teams cross 150 in the same hand, the bid team wins |
+| No tricks ⚙ | A team that wins no tricks scores nothing that hand — or allow meld to count anyway |
+| Bidder goes out | If both teams cross the goal in the same hand, the bid team wins |
 
 ### Meld
 

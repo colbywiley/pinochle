@@ -6,7 +6,7 @@
 <title>Pinochle — Card Room</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,700;0,900;1,400;1,700&family=Inconsolata:wght@400;600;700&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,500;0,9..144,600;0,9..144,700;0,9..144,900;1,9..144,500&family=Outfit:wght@300;400;500;600;700&display=swap" rel="stylesheet">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/peerjs/1.5.4/peerjs.min.js"></script>
 <link rel="stylesheet" href="css/style.css">
 </head>
@@ -17,9 +17,9 @@
   <div class="lobby-bg-pattern"></div>
 
   <div class="lobby-hero">
-    <div class="suit-row" aria-hidden="true">♠ ♥ ♦ ♣</div>
+    <div class="suit-row" aria-hidden="true"><span>♠</span><span class="red">♥</span><span>♣</span><span class="red">♦</span></div>
     <h1>Pinochle</h1>
-    <p class="lobby-sub">Single Deck · Partners · First to 150</p>
+    <p class="lobby-sub">A card room for four · single deck · partners</p>
   </div>
 
   <div class="lobby-panels">
@@ -27,15 +27,15 @@
     <div class="panel" id="panel-create">
       <div class="panel-header">
         <span class="panel-num">I</span>
-        <h2>Create Room</h2>
+        <h2>Host a Table</h2>
       </div>
-      <label>Your Name</label>
+      <label for="host-name">Your name</label>
       <input type="text" id="host-name" placeholder="Name" maxlength="16" autocomplete="off">
       <button class="btn" onclick="createRoom()">Create Game</button>
       <div id="create-status" class="status-line"></div>
       <div id="room-share" style="display:none">
         <div class="divider"></div>
-        <label>Share This Code</label>
+        <label>Share this code</label>
         <div id="room-code-display">—</div>
         <div class="copy-hint">Click to copy the invite link</div>
         <div class="lobby-player-grid" id="lobby-players-list"></div>
@@ -46,19 +46,19 @@
       </div>
     </div>
 
-    <div class="panel-divider">or</div>
+    <div class="panel-divider"><span>or</span></div>
 
     <!-- JOIN -->
     <div class="panel" id="panel-join">
       <div class="panel-header">
         <span class="panel-num">II</span>
-        <h2>Join Room</h2>
+        <h2>Join a Table</h2>
       </div>
-      <label>Your Name</label>
+      <label for="join-name">Your name</label>
       <input type="text" id="join-name" placeholder="Name" maxlength="16" autocomplete="off">
-      <label>Room Code</label>
+      <label for="room-input">Room code</label>
       <input type="text" id="room-input" placeholder="e.g. PINE42" maxlength="8"
-             style="text-transform:uppercase;letter-spacing:0.15em;font-size:1.1rem"
+             class="code-input"
              oninput="this.value=this.value.toUpperCase()"
              autocomplete="off">
       <button class="btn btn-outline" onclick="joinRoom()">Join →</button>
@@ -69,11 +69,11 @@
   <!-- PRACTICE VS COMPUTER -->
   <div class="solo-bar">
     <button class="btn btn-solo" onclick="startPracticeSetup()">🃏 Play vs Computer</button>
-    <span class="solo-hint">No network needed · You play South with a computer partner and opponents</span>
+    <span class="solo-hint">No network needed — you play South with a computer partner and opponents</span>
   </div>
 
   <!-- PRACTICE START PANEL -->
-  <div class="panel" id="solo-start-panel" style="display:none; max-width:420px; width:100%">
+  <div class="panel solo-panel" id="solo-start-panel" style="display:none">
     <div class="panel-header">
       <span class="panel-num">♣</span>
       <h2>Play vs Computer</h2>
@@ -92,18 +92,84 @@
     </button>
   </div>
 
+  <!-- HOUSE RULES -->
+  <details class="lobby-accordion" id="house-rules" open>
+    <summary>House Rules <span class="accordion-note">the host sets these before dealing</span></summary>
+    <div class="hr-grid">
+      <label class="hr-field">
+        <span>Game to</span>
+        <select id="hr-goal">
+          <option value="100">100 points</option>
+          <option value="150" selected>150 points</option>
+          <option value="200">200 points</option>
+          <option value="300">300 points</option>
+        </select>
+      </label>
+      <label class="hr-field">
+        <span>Minimum bid</span>
+        <select id="hr-minBid">
+          <option value="20">20</option>
+          <option value="25" selected>25</option>
+          <option value="30">30</option>
+        </select>
+      </label>
+      <label class="hr-field">
+        <span>Stick the dealer</span>
+        <select id="hr-stickDealer">
+          <option value="true" selected>On — dealer must bid if all pass</option>
+          <option value="false">Off — four passes throw the hand in</option>
+        </select>
+      </label>
+      <label class="hr-field">
+        <span>Card passing</span>
+        <select id="hr-passCount">
+          <option value="3" selected>Partner passes 3 · bidder returns 3</option>
+          <option value="4">Partner passes 4 · bidder returns 4</option>
+          <option value="0">No passing</option>
+        </select>
+      </label>
+      <label class="hr-field">
+        <span>Peek at passed cards</span>
+        <select id="hr-passPeek">
+          <option value="peek" selected>Peek — bidder looks before returning</option>
+          <option value="no_peek">No peek — bidder returns blind</option>
+        </select>
+      </label>
+      <label class="hr-field">
+        <span>Play rules</span>
+        <select id="hr-playRules">
+          <option value="must_head" selected>Must head the trick</option>
+          <option value="must_trump">Must trump when void (no heading)</option>
+          <option value="follow_suit">Follow suit only</option>
+        </select>
+      </label>
+      <label class="hr-field">
+        <span>Last trick bonus</span>
+        <select id="hr-lastTrickBonus">
+          <option value="1" selected>+1 point</option>
+          <option value="2">+2 points</option>
+        </select>
+      </label>
+      <label class="hr-field">
+        <span>Meld with no tricks</span>
+        <select id="hr-needTrickToScore">
+          <option value="true" selected>Not scored — must win a trick</option>
+          <option value="false">Scored anyway</option>
+        </select>
+      </label>
+    </div>
+  </details>
+
   <!-- rules summary -->
-  <details class="rules-accordion">
-    <summary>Rules Summary</summary>
+  <details class="lobby-accordion">
+    <summary>How Scoring Works</summary>
     <div class="rules-grid">
       <div><strong>Deck</strong> 48 cards — two each of A 10 K Q J 9 in every suit</div>
-      <div><strong>Goal</strong> First team to 150 points wins</div>
-      <div><strong>Bidding</strong> Min 25, raise by 1, pass = out. Stick the dealer at 25.</div>
-      <div><strong>Trump &amp; Pass</strong> Bid winner names trump; partner passes them 3 cards, bidder returns 3</div>
+      <div><strong>Bidding</strong> Winner names trump and leads the first trick</div>
       <div><strong>Meld</strong> Run 15 · Aces 10 · Kings 8 · Queens 6 · Jacks 4 · Pinochle 4 (dbl 30) · Royal marriage 4 · Marriage 2 · Dix 1</div>
-      <div><strong>Play</strong> Bidder leads. Follow suit and beat the winning card if you can; trump if void.</div>
-      <div><strong>Counters</strong> Each ace, ten and king taken = 1 pt; last trick +1 (25 in play)</div>
-      <div><strong>Scoring</strong> Make the bid: score meld + tricks. Miss it: lose the bid. No tricks = no score. Bidder goes out first at 150.</div>
+      <div><strong>Counters</strong> Each ace, ten and king taken in tricks = 1 point, plus the last-trick bonus</div>
+      <div><strong>Making the bid</strong> Score meld + tricks if they reach the bid; otherwise lose the bid</div>
+      <div><strong>Bidder goes out</strong> If both teams cross the goal in one hand, the bid team wins</div>
     </div>
   </details>
 </div>
@@ -113,6 +179,7 @@
 
   <!-- TABLE -->
   <div id="table">
+    <div class="table-ring" aria-hidden="true"></div>
 
     <!-- top bar -->
     <div id="top-bar">
@@ -197,16 +264,16 @@
 
     <!-- PASS PANEL (bidder's partner) -->
     <div id="pass-panel" style="display:none">
-      <div class="pass-title" id="pass-title">Pass 3 cards to your partner</div>
+      <div class="pass-title" id="pass-title">Pass cards to your partner</div>
       <div id="pass-selected-display"></div>
-      <button class="btn btn-sm" id="pass-confirm-btn" onclick="confirmPass()" disabled>Pass 3 Cards →</button>
+      <button class="btn btn-sm" id="pass-confirm-btn" onclick="confirmPass()" disabled>Pass Cards →</button>
     </div>
 
-    <!-- RETURN PANEL (bidder sends 3 back) -->
+    <!-- RETURN PANEL (bidder sends cards back) -->
     <div id="return-panel" style="display:none">
-      <div class="pass-title" id="return-title">Return 3 cards to your partner</div>
+      <div class="pass-title" id="return-title">Return cards to your partner</div>
       <div id="return-selected-display"></div>
-      <button class="btn btn-sm" id="return-confirm-btn" onclick="confirmReturn()" disabled>Return 3 Cards →</button>
+      <button class="btn btn-sm" id="return-confirm-btn" onclick="confirmReturn()" disabled>Return Cards →</button>
     </div>
 
     <!-- LOG -->
@@ -242,7 +309,7 @@
   <div class="modal-box wide">
     <div class="modal-title">Meld Summary</div>
     <div id="meld-modal-content"></div>
-    <div id="meld-modal-note" style="font-size:0.8rem;opacity:0.7;margin-top:0.75rem"></div>
+    <div id="meld-modal-note" class="modal-note"></div>
     <button class="btn" onclick="closeMeldModal()">Begin Play →</button>
   </div>
 </div>
@@ -252,7 +319,7 @@
   <div class="modal-box wide">
     <div class="modal-title" id="round-title">Round Over</div>
     <div id="round-content"></div>
-    <div style="display:flex;gap:0.75rem;justify-content:center;margin-top:1rem;flex-wrap:wrap">
+    <div class="modal-actions">
       <button class="btn btn-outline" onclick="showDealReview()">Review Hands 🃏</button>
       <button class="btn" id="next-round-btn" onclick="nextRound()">Next Round →</button>
     </div>
@@ -264,9 +331,9 @@
 
 <!-- DEAL REVIEW -->
 <div class="modal" id="review-modal">
-  <div class="modal-box wide" style="max-width:720px">
+  <div class="modal-box wide review-box">
     <div class="modal-title">Deal Review — Round <span id="review-round-num"></span></div>
-    <p style="font-size:0.78rem;opacity:0.6;margin-bottom:1rem">Original hands as dealt (before passing)</p>
+    <p class="modal-note" style="margin-bottom:1rem">Original hands as dealt (before passing)</p>
     <div id="review-content"></div>
     <button class="btn btn-outline" onclick="closeReviewModal()" style="margin-top:1rem">Back</button>
   </div>
@@ -278,7 +345,7 @@
     <div class="winner-crown">♛</div>
     <div class="modal-title" id="winner-text">Team Wins!</div>
     <p id="gameover-msg"></p>
-    <div style="display:flex;gap:0.75rem;justify-content:center;margin-top:0.75rem;flex-wrap:wrap">
+    <div class="modal-actions">
       <button class="btn btn-outline" onclick="showDealReview()">Review Hands 🃏</button>
       <button class="btn" onclick="location.reload()">New Game</button>
     </div>

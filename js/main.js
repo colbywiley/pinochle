@@ -196,6 +196,39 @@ function onConnClosed(label) {
 
 // ── START GAME (host) ─────────────────────────────────────────────────────────
 
+// ── HOUSE RULES ───────────────────────────────────────────────────────────────
+
+const RULE_FIELDS = ['goal','minBid','stickDealer','passCount','passPeek',
+                     'playRules','lastTrickBonus','needTrickToScore'];
+
+/** Read the House Rules form into a rules object (numbers/bools coerced) */
+function readHouseRules() {
+  const r = {};
+  for (const f of RULE_FIELDS) {
+    const el = document.getElementById('hr-' + f);
+    if (!el) continue;
+    let v = el.value;
+    if (/^\d+$/.test(v)) v = parseInt(v, 10);
+    else if (v === 'true') v = true;
+    else if (v === 'false') v = false;
+    r[f] = v;
+  }
+  try { localStorage.setItem('pinochle-rules', JSON.stringify(r)); } catch {}
+  return normalizeRules(r);
+}
+
+/** Restore the last-used rules into the form */
+function loadSavedRules() {
+  let saved = null;
+  try { saved = JSON.parse(localStorage.getItem('pinochle-rules')); } catch {}
+  if (!saved) return;
+  const r = normalizeRules(saved);
+  for (const f of RULE_FIELDS) {
+    const el = document.getElementById('hr-' + f);
+    if (el) el.value = String(r[f]);
+  }
+}
+
 function hostStartGame() {
   if (!isHost || G) return;
 
@@ -205,8 +238,9 @@ function hostStartGame() {
     if (!playerMap[p]) playerMap[p] = { name: BOT_NAMES[b++ % BOT_NAMES.length], bot: true };
   }
 
-  G = newRound(null);
+  G = newRound(null, readHouseRules());
   dealCards(G);
+  hostLog(describeRules(G.rules));
   hostLog(`Round 1 — ${G.dealer} deals`);
 
   for (const [pos, conn] of Object.entries(dataConns)) {
@@ -240,8 +274,9 @@ function startPracticeSetup() {
 }
 
 function startPracticeGame() {
-  G = newRound(null);
+  G = newRound(null, readHouseRules());
   dealCards(G);
+  hostLog(describeRules(G.rules));
   hostLog(`Round 1 — ${G.dealer} deals`);
   enterGame();
   applyGameState(buildPlayerView(G, myPos));
@@ -298,6 +333,8 @@ function setStatus(panel, html) {
 // ── PAGE LOAD ─────────────────────────────────────────────────────────────────
 
 window.addEventListener('load', () => {
+  loadSavedRules();
+
   // ?room= query param pre-fills the join field
   const params = new URLSearchParams(location.search);
   const roomParam = params.get('room');

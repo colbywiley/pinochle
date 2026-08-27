@@ -39,13 +39,14 @@ function botEstimatePoints(hand) {
 /** Returns the bid amount (0 = pass) */
 function botChooseBid(state, pos) {
   const hand = state.hands[pos];
-  const minAllowed = Math.max(MIN_BID, state.highBid + 1);
+  const minBid = state.rules.minBid;
+  const minAllowed = Math.max(minBid, state.highBid + 1);
 
   // Stuck dealer must open at minimum
   const others = POSITIONS.filter(p => p !== state.dealer);
-  const stuck  = pos === state.dealer && state.highBid === 0 &&
-                 others.every(p => state.bids[p] === 0);
-  if (stuck) return MIN_BID;
+  const stuck  = state.rules.stickDealer && pos === state.dealer &&
+                 state.highBid === 0 && others.every(p => state.bids[p] === 0);
+  if (stuck) return minBid;
 
   if (minAllowed > MAX_BID) return 0; // engine's hard bid ceiling
 
@@ -71,7 +72,7 @@ function botMeldDelta(hand, card, trump) {
   return calcMeld(hand, trump).score - calcMeld(without, trump).score;
 }
 
-/** Partner of the bidder: pick 3 cards most useful to the bidder (trump + aces) */
+/** Partner of the bidder: pick the cards most useful to the bidder (trump + aces) */
 function botChoosePassCards(state, pos) {
   const hand  = state.hands[pos];
   const trump = state.trump;
@@ -85,10 +86,10 @@ function botChoosePassCards(state, pos) {
     return { card, v };
   });
   scored.sort((a, b) => b.v - a.v);
-  return scored.slice(0, 3).map(x => x.card);
+  return scored.slice(0, state.rules.passCount).map(x => x.card);
 }
 
-/** Bidder: return the 3 least useful cards to partner */
+/** Bidder: return the least useful cards to partner */
 function botChooseReturnCards(state, pos) {
   const hand  = state.hands[pos];
   const trump = state.trump;
@@ -103,7 +104,7 @@ function botChooseReturnCards(state, pos) {
     return { card, keep };
   });
   scored.sort((a, b) => a.keep - b.keep);
-  return scored.slice(0, 3).map(x => x.card);
+  return scored.slice(0, state.rules.passCount).map(x => x.card);
 }
 
 // ── Card play ────────────────────────────────────────────────
@@ -162,16 +163,16 @@ function botFallback(state, pos) {
   switch (state.phase) {
     case 'bidding': {
       const others = POSITIONS.filter(p => p !== state.dealer);
-      const stuck = pos === state.dealer && state.highBid === 0 &&
-                    others.every(p => state.bids[p] === 0);
-      return { action:'bid', amount: stuck ? MIN_BID : 0 };
+      const stuck = state.rules.stickDealer && pos === state.dealer &&
+                    state.highBid === 0 && others.every(p => state.bids[p] === 0);
+      return { action:'bid', amount: stuck ? state.rules.minBid : 0 };
     }
     case 'naming_trump':
       return { action:'name_trump', suit: (state.hands[pos][0] || { s: SUITS[0] }).s };
     case 'passing':
-      return { action:'pass_cards', cards: state.hands[pos].slice(0, 3) };
+      return { action:'pass_cards', cards: state.hands[pos].slice(0, state.rules.passCount) };
     case 'returning':
-      return { action:'return_cards', cards: state.hands[pos].slice(0, 3) };
+      return { action:'return_cards', cards: state.hands[pos].slice(0, state.rules.passCount) };
     case 'playing': {
       const legal = legalPlays(state, pos);
       return legal.length ? { action:'play_card', card: legal[0] } : null;

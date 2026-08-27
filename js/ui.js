@@ -83,13 +83,14 @@ async function doApplyState(view) {
       await animTrickSweep(absToDisplay(V.trickLeader), keys);
     }
     // ── Pass / return observed (cards fly between partners) ──
+    const passN = V.rules?.passCount ?? 3;
     if (prev && prev.phase === 'passing' && V.phase === 'returning' &&
         myPos !== partnerOf(V.highBidder)) {
-      await animFlyBacks(absToDisplay(partnerOf(V.highBidder)), absToDisplay(V.highBidder), 3);
+      await animFlyBacks(absToDisplay(partnerOf(V.highBidder)), absToDisplay(V.highBidder), passN);
     }
     if (prev && prev.phase === 'returning' && V.phase === 'meld' &&
         myPos !== V.highBidder) {
-      await animFlyBacks(absToDisplay(V.highBidder), absToDisplay(partnerOf(V.highBidder)), 3);
+      await animFlyBacks(absToDisplay(V.highBidder), absToDisplay(partnerOf(V.highBidder)), passN);
     }
     if (prev && prev.phase !== V.phase && V.phase === 'meld' && V.trump) {
       animTrumpBurst(V.trump);
@@ -185,12 +186,14 @@ function renderTopBar() {
     td.className     = RED_SUITS.has(V.trump) ? 'red' : '';
   } else td.style.display = 'none';
 
+  const goal = V.rules?.goal ?? GOAL;
   document.getElementById('score-ns').textContent = V.scores.ns;
   document.getElementById('score-ew').textContent = V.scores.ew;
   document.getElementById('score-ns-wrap').className = 'score-team' +
-    (V.scores.ns >= GOAL ? ' winning' : V.scores.ns < 0 ? ' at-risk' : '');
+    (V.scores.ns >= goal ? ' winning' : V.scores.ns < 0 ? ' at-risk' : '');
   document.getElementById('score-ew-wrap').className = 'score-team' +
-    (V.scores.ew >= GOAL ? ' winning' : V.scores.ew < 0 ? ' at-risk' : '');
+    (V.scores.ew >= goal ? ' winning' : V.scores.ew < 0 ? ' at-risk' : '');
+  document.getElementById('phase-label').title = describeRules(V.rules || {});
 
   const nsNames = POSITIONS.filter(p=>teamOf(p)==='ns').map(playerName).join('/');
   const ewNames = POSITIONS.filter(p=>teamOf(p)==='ew').map(playerName).join('/');
@@ -246,17 +249,19 @@ function renderActionPanel() {
   // ── My bid turn: centered bid dialog ──
   if (V.phase === 'bidding' && V.currentBidder === myPos && V.bids?.[myPos] !== 0) {
     panel.classList.add('visible');
-    const minBid = Math.max(MIN_BID, V.highBid + 1);
+    const ruleMin = V.rules?.minBid ?? MIN_BID;
+    const minBid = Math.max(ruleMin, V.highBid + 1);
     const allOthersPassed = POSITIONS.filter(p=>p!==V.dealer).every(p=>V.bids[p]===0);
-    const isStuck = V.dealer === myPos && allOthersPassed && V.highBid === 0;
+    const isStuck = (V.rules?.stickDealer !== false) &&
+                    V.dealer === myPos && allOthersPassed && V.highBid === 0;
 
     const status = document.createElement('div');
     status.className = 'ap-status';
     status.textContent = isStuck
-      ? `Everyone passed — you're the dealer and must bid ${MIN_BID}`
+      ? `Everyone passed — you're the dealer and must bid ${ruleMin}`
       : (V.highBid > 0
           ? `Current high bid: ${V.highBid} by ${playerName(V.highBidder)}`
-          : `No bids yet — minimum bid is ${MIN_BID}`);
+          : `No bids yet — minimum bid is ${ruleMin}`);
     panel.appendChild(status);
 
     const row = document.createElement('div');
@@ -306,10 +311,10 @@ function renderActionPanel() {
     const l = hint(`${playerName(V.highBidder)} won the bid at ${V.highBid} — naming trump…`);
     l.style.opacity = '0.75';
   } else if (V.phase === 'passing' && partnerOf(V.highBidder) !== myPos) {
-    const l = hint(`${playerName(partnerOf(V.highBidder))} is passing 3 cards to ${playerName(V.highBidder)}…`);
+    const l = hint(`${playerName(partnerOf(V.highBidder))} is passing ${V.rules?.passCount ?? 3} cards to ${playerName(V.highBidder)}…`);
     l.style.opacity = '0.75';
   } else if (V.phase === 'returning' && V.highBidder !== myPos) {
-    const l = hint(`${playerName(V.highBidder)} is returning 3 cards…`);
+    const l = hint(`${playerName(V.highBidder)} is returning ${V.rules?.passCount ?? 3} cards…`);
     l.style.opacity = '0.75';
   } else if (V.phase === 'playing') {
     if (isMyTurn()) {
@@ -339,6 +344,8 @@ function renderPassPanels() {
   const retP  = document.getElementById('return-panel');
   const showPass = V.phase === 'passing'   && partnerOf(V.highBidder) === myPos;
   const showRet  = V.phase === 'returning' && V.highBidder === myPos;
+  const n       = V.rules?.passCount ?? 3;
+  const noPeek  = V.rules?.passPeek === 'no_peek';
 
   passP.style.display = showPass ? 'flex' : 'none';
   retP.style.display  = showRet  ? 'flex' : 'none';
@@ -351,25 +358,29 @@ function renderPassPanels() {
 
   if (showPass) {
     document.getElementById('pass-title').textContent =
-      `Your partner ${playerName(V.highBidder)} won the bid — pass them your best 3 cards`;
+      `Your partner ${playerName(V.highBidder)} won the bid — pass them your best ${n} cards`;
     document.getElementById('pass-selected-display').textContent =
-      selectedKeys.length ? selText() : 'Click 3 cards in your hand';
-    document.getElementById('pass-confirm-btn').disabled = selectedKeys.length !== 3;
+      selectedKeys.length ? selText() : `Click ${n} cards in your hand`;
+    document.getElementById('pass-confirm-btn').textContent = `Pass ${n} Cards →`;
+    document.getElementById('pass-confirm-btn').disabled = selectedKeys.length !== n;
   }
   if (showRet) {
-    document.getElementById('return-title').textContent =
-      `${playerName(partnerOf(V.highBidder))} passed you 3 cards (highlighted) — return any 3`;
+    document.getElementById('return-title').textContent = noPeek
+      ? `${playerName(partnerOf(V.highBidder))} passed you ${n} cards, face down — send ${n} back before you look`
+      : `${playerName(partnerOf(V.highBidder))} passed you ${n} cards (highlighted) — return any ${n}`;
     document.getElementById('return-selected-display').textContent =
-      selectedKeys.length ? selText() : 'Click 3 cards in your hand';
-    document.getElementById('return-confirm-btn').disabled = selectedKeys.length !== 3;
+      selectedKeys.length ? selText() : `Click ${n} cards in your hand`;
+    document.getElementById('return-confirm-btn').textContent = `Return ${n} Cards →`;
+    document.getElementById('return-confirm-btn').disabled = selectedKeys.length !== n;
   }
 }
 
 function toggleSelect(card) {
   const key = cardKey(card);
   const idx = selectedKeys.indexOf(key);
+  const n = V.rules?.passCount ?? 3;
   if (idx >= 0) selectedKeys.splice(idx, 1);
-  else if (selectedKeys.length < 3) selectedKeys.push(key);
+  else if (selectedKeys.length < n) selectedKeys.push(key);
   rebuildMyHandFan();
   renderPassPanels();
 }
@@ -381,7 +392,7 @@ function selectedCards() {
 
 async function confirmPass() {
   const cards = selectedCards();
-  if (cards.length !== 3 || V.phase !== 'passing') return;
+  if (cards.length !== (V.rules?.passCount ?? 3) || V.phase !== 'passing') return;
   selectedKeys = [];
   document.getElementById('pass-panel').style.display = 'none';
   await animPassCards(cards, absToDisplay(myPos), absToDisplay(V.highBidder));
@@ -390,7 +401,7 @@ async function confirmPass() {
 
 async function confirmReturn() {
   const cards = selectedCards();
-  if (cards.length !== 3 || V.phase !== 'returning') return;
+  if (cards.length !== (V.rules?.passCount ?? 3) || V.phase !== 'returning') return;
   selectedKeys = [];
   document.getElementById('return-panel').style.display = 'none';
   await animPassCards(cards, absToDisplay(myPos), absToDisplay(partnerOf(myPos)));

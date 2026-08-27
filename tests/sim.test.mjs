@@ -28,12 +28,14 @@ const {
   processBid, processTrump, processPass, processReturn, processPlayCard,
   startPlaying, legalPlays, nextToPlay, checkWinner, beats,
   teamOf, partnerOf, leftOf, botDecide, countPoints,
+  DEFAULT_RULES, normalizeRules, describeRules,
 } = vm.runInContext(`({
   SUITS, RANK_ORDER, POSITIONS, MIN_BID, GOAL, POINTS_PER_HAND,
   makeDeck, cardKey, sortHand, calcMeld, newRound, dealCards,
   processBid, processTrump, processPass, processReturn, processPlayCard,
   startPlaying, legalPlays, nextToPlay, checkWinner, beats,
   teamOf, partnerOf, leftOf, botDecide, countPoints,
+  DEFAULT_RULES, normalizeRules, describeRules,
 })`, ctx);
 
 let failures = 0, checks = 0;
@@ -256,6 +258,102 @@ function meldOf(cards, trump) { return calcMeld(cards, trump).score; }
 }
 
 // ══════════════════════════════════════════════════════════════
+// 5b. HOUSE RULE VARIANTS — unit checks
+// ══════════════════════════════════════════════════════════════
+function biddingWonBy(st, winner, amount) {
+  // drive the auction so `winner` takes it at `amount`
+  while (st.phase === 'bidding') {
+    const p = st.currentBidder;
+    const r = processBid(st, p, p === winner && st.highBidder !== winner ? amount : 0);
+    assert(r.ok, `variant auction step ok (${r.error})`);
+    if (r.redeal) return false;
+  }
+  return true;
+}
+{
+  // ── no_peek: returns must come from the bidder's own dozen ──
+  let st = newRound(null, { passPeek: 'no_peek' }); dealCards(st);
+  assertEq(st.rules.passPeek, 'no_peek', 'no_peek rule stored');
+  biddingWonBy(st, 'west', 25);
+  processTrump(st, 'west', 'S');
+  const passCards = st.hands.east.slice(0, 3).map(c => ({...c}));
+  let r = processPass(st, 'east', passCards);
+  assert(r.ok, 'no_peek: partner passes');
+  assertEq(st.hands.west.length, 12, 'no_peek: bidder hand still 12 (cards held)');
+  assertEq(st.pendingPass.length, 3, 'no_peek: 3 cards held face-down');
+  assertEq(st.hands.east.length, 9, 'no_peek: partner down to 9');
+  // bidder cannot return a card they have not seen (unless they hold the
+  // twin copy of the same rank+suit, which is legitimately theirs to give)
+  const unseen = passCards.find(pc => !st.hands.west.some(c => c.r === pc.r && c.s === pc.s));
+  if (unseen) {
+    r = processReturn(st, 'west', [unseen, st.hands.west[0], st.hands.west[1]].map(c=>({...c})));
+    assert(!r.ok, 'no_peek: cannot return an unseen passed card');
+    assertEq(st.hands.west.length, 12, 'no_peek: hand intact after rejection');
+  }
+  const ret = st.hands.west.slice(0, 3).map(c => ({...c}));
+  r = processReturn(st, 'west', ret);
+  assert(r.ok, 'no_peek: valid return accepted');
+  assertEq(st.hands.west.length, 12, 'no_peek: bidder ends with 12 (returns out, pass in)');
+  assertEq(st.hands.east.length, 12, 'no_peek: partner ends with 12');
+  assertEq(st.pendingPass.length, 0, 'no_peek: held cards delivered');
+  const passIds = new Set(passCards.map(c => c.id));
+  assert(st.hands.west.some(c => passIds.has(c.id)), 'no_peek: passed cards reached the bidder');
+
+  // ── passCount 0: trump goes straight to meld ──
+  st = newRound(null, { passCount: 0 }); dealCards(st);
+  biddingWonBy(st, 'north', 25);
+  r = processTrump(st, 'north', 'H');
+  assert(r.ok, 'no-pass: trump named');
+  assertEq(st.phase, 'meld', 'no-pass: straight to meld');
+  for (const p of POSITIONS) {
+    assertEq(st.hands[p].length, 12, `no-pass: ${p} still has 12`);
+    assertEq(st.meld[p], calcMeld(st.hands[p], 'H').score, `no-pass: meld computed for ${p}`);
+  }
+
+  // ── stick the dealer OFF: four passes throw the hand in ──
+  st = newRound(null, { stickDealer: false }); dealCards(st);
+  processBid(st, 'west', 0);
+  processBid(st, 'north', 0);
+  r = processBid(st, 'east', 0);
+  assert(r.ok && !r.redeal, 'stick-off: dealer still to act');
+  r = processBid(st, 'south', 0);
+  assert(r.ok && r.redeal, 'stick-off: dealer may pass — hand thrown in');
+
+  // ── minBid variant ──
+  st = newRound(null, { minBid: 30 }); dealCards(st);
+  r = processBid(st, 'west', 29);
+  assert(!r.ok, 'minBid 30: 29 rejected');
+  r = processBid(st, 'west', 30);
+  assert(r.ok, 'minBid 30: 30 accepted');
+
+  // ── play-rule variants: void in led suit, an opponent already trumped ──
+  const mkPlay = mode => {
+    const s = newRound(null, { playRules: mode });
+    s.phase = 'playing'; s.trump = 'H'; s.trickLeader = 'west';
+    s.currentTrick = [{ seat:'west', card:C('K','S') }, { seat:'north', card:C('J','H') }];
+    s.trickLedSuit = 'S';
+    s.hands.east = [C('9','H'), C('A','H'), C('A','D')];
+    return legalPlays(s, 'east').map(c => cardKey(c)).sort();
+  };
+  assertEq(JSON.stringify(mkPlay('must_head')),  JSON.stringify([cardKey(C('A','H'))]),
+    'must_head: must over-trump the J♥');
+  assertEq(JSON.stringify(mkPlay('must_trump')), JSON.stringify([cardKey(C('9','H')), cardKey(C('A','H'))].sort()),
+    'must_trump: any trump, no over-trump requirement');
+  assertEq(mkPlay('follow_suit').length, 3, 'follow_suit: void → anything');
+
+  // must_head within the led suit still applies only in must_head mode
+  const sFollow = newRound(null, { playRules: 'must_trump' });
+  sFollow.phase='playing'; sFollow.trump='H'; sFollow.trickLeader='west';
+  sFollow.currentTrick=[{seat:'west',card:C('K','S')}]; sFollow.trickLedSuit='S';
+  sFollow.hands.north=[C('A','S'), C('Q','S')];
+  assertEq(legalPlays(sFollow,'north').length, 2, 'must_trump: follow suit without heading');
+
+  // ── normalizeRules sanitizes junk ──
+  const junk = normalizeRules({ goal: 999, minBid: 'x', passCount: 7, passPeek: 'maybe', playRules: 'chaos' });
+  assertEq(JSON.stringify(junk), JSON.stringify(DEFAULT_RULES), 'junk rules fall back to defaults');
+}
+
+// ══════════════════════════════════════════════════════════════
 // 6. FULL-GAME SIMULATIONS (bots at all four seats)
 // ══════════════════════════════════════════════════════════════
 
@@ -270,75 +368,75 @@ function currentActorSim(state) {
   }
 }
 
-function playOneGame(gameIdx) {
-  let state = newRound(null);
+function playOneGame(gameIdx, ruleset, tag) {
+  let state = newRound(null, ruleset);
+  const rules = state.rules;
+  const pointsInPlay = 24 + rules.lastTrickBonus;
   dealCards(state);
-  let rounds = 0, steps = 0;
+  let rounds = 0, redeals = 0, steps = 0;
+  const id = `game ${tag}/${gameIdx}`;
 
   while (true) {
-    if (++steps > 20000) { assert(false, `game ${gameIdx}: runaway (no termination)`); return; }
+    if (++steps > 30000) { assert(false, `${id}: runaway (no termination)`); return; }
 
     if (state.phase === 'meld') {
-      // meld totals must match hands
       for (const p of POSITIONS) {
         assertEq(state.meld[p], calcMeld(state.hands[p], state.trump).score,
-          `game ${gameIdx}: meld matches hand for ${p}`);
-        assertEq(state.hands[p].length, 12, `game ${gameIdx}: ${p} has 12 cards at meld`);
+          `${id}: meld matches hand for ${p}`);
+        assertEq(state.hands[p].length, 12, `${id}: ${p} has 12 cards at meld`);
       }
+      assertEq(state.pendingPass.length, 0, `${id}: no cards left in limbo`);
       const r = startPlaying(state);
-      assert(r.ok, `game ${gameIdx}: startPlaying ok`);
-      assertEq(nextToPlay(state), state.highBidder, `game ${gameIdx}: bidder leads first trick`);
+      assert(r.ok, `${id}: startPlaying ok`);
+      assertEq(nextToPlay(state), state.highBidder, `${id}: bidder leads first trick`);
       continue;
     }
 
     if (state.phase === 'round_over') {
       rounds++;
       const res = state.lastRoundResult;
-      assert(res, `game ${gameIdx}: round result exists`);
-      assertEq(state.trickPts.ns + state.trickPts.ew, POINTS_PER_HAND,
-        `game ${gameIdx} round ${rounds}: 25 points in play`);
+      assert(res, `${id}: round result exists`);
+      assertEq(state.trickPts.ns + state.trickPts.ew, pointsInPlay,
+        `${id} round ${rounds}: ${pointsInPlay} points in play`);
       assertEq(state.tricksWon.ns + state.tricksWon.ew, 12,
-        `game ${gameIdx} round ${rounds}: 12 tricks played`);
+        `${id} round ${rounds}: 12 tricks played`);
       for (const p of POSITIONS) {
-        assertEq(state.hands[p].length, 0, `game ${gameIdx}: hands empty at round end`);
+        assertEq(state.hands[p].length, 0, `${id}: hands empty at round end`);
       }
-      // Scoring bookkeeping
-      const bidDelta = res.bidMet ? res.bidTotal : -res.highBid;
-      assert(Number.isFinite(res.nsScore) && Number.isFinite(res.ewScore),
-        `game ${gameIdx}: finite scores`);
-      if (res.bidMet) {
-        assert(res.bidTotal >= res.highBid, `game ${gameIdx}: bidMet implies total >= bid`);
-        assert(res.bidTricksWon > 0, `game ${gameIdx}: bidMet implies at least one trick`);
+      assert(Number.isFinite(res.nsScore) && Number.isFinite(res.ewScore), `${id}: finite scores`);
+      if (res.bidMet) assert(res.bidTotal >= res.highBid, `${id}: bidMet implies total >= bid`);
+      if (rules.needTrickToScore) {
+        if (res.bidTricksWon === 0)  assert(!res.bidMet, `${id}: zero tricks can never make the bid`);
+        if (res.enemTricksWon === 0) assertEq(res.enemTotal, 0, `${id}: no tricks = no score`);
+      } else {
+        if (res.enemTricksWon === 0) assertEq(res.enemTotal, res.enemMeld, `${id}: trickless meld still scores`);
       }
-      if (res.bidTricksWon === 0) assert(!res.bidMet, `game ${gameIdx}: zero tricks can never make the bid`);
-      if (res.enemTricksWon === 0) assertEq(res.enemTotal, 0, `game ${gameIdx}: no tricks = no score`);
-      assert(bidDelta !== undefined, 'bidDelta defined');
 
       const winner = checkWinner(state);
       if (winner) {
-        assert(state.scores[winner] >= GOAL, `game ${gameIdx}: winner reached goal`);
-        // Bidder goes out: if both teams >= goal, bid team wins
-        if (state.scores.ns >= GOAL && state.scores.ew >= GOAL) {
-          assertEq(winner, res.bidTeam, `game ${gameIdx}: bidder goes out on double-cross`);
+        assert(state.scores[winner] >= rules.goal, `${id}: winner reached goal ${rules.goal}`);
+        if (state.scores.ns >= rules.goal && state.scores.ew >= rules.goal) {
+          assertEq(winner, res.bidTeam, `${id}: bidder goes out on double-cross`);
         }
-        return { rounds, winner, scores: { ...state.scores } };
+        return { rounds, redeals, winner, scores: { ...state.scores } };
       }
-      assert(rounds < 200, `game ${gameIdx}: terminates within 200 rounds`);
+      assert(rounds < 300, `${id}: terminates within 300 rounds`);
       const prevScores = { ...state.scores };
       const prevRound = state.roundNum;
       const prevDealer = state.dealer;
       state = newRound(state);
       dealCards(state);
-      assertEq(state.roundNum, prevRound + 1, `game ${gameIdx}: round number increments`);
-      assertEq(state.dealer, leftOf(prevDealer), `game ${gameIdx}: deal rotates`);
-      assertEq(state.scores.ns, prevScores.ns, `game ${gameIdx}: scores carry over`);
+      assertEq(state.roundNum, prevRound + 1, `${id}: round number increments`);
+      assertEq(state.dealer, leftOf(prevDealer), `${id}: deal rotates`);
+      assertEq(state.scores.ns, prevScores.ns, `${id}: scores carry over`);
+      assertEq(JSON.stringify(state.rules), JSON.stringify(rules), `${id}: rules carry over`);
       continue;
     }
 
     const actor = currentActorSim(state);
-    assert(actor, `game ${gameIdx}: phase ${state.phase} has an actor`);
+    assert(actor, `${id}: phase ${state.phase} has an actor`);
     const act = botDecide(state, actor);
-    assert(act, `game ${gameIdx}: bot has an action in ${state.phase}`);
+    assert(act, `${id}: bot has an action in ${state.phase}`);
 
     let r;
     switch (act.action) {
@@ -350,29 +448,55 @@ function playOneGame(gameIdx) {
         // Every bot play must be legal by the engine's own rules
         const legal = legalPlays(state, actor);
         assert(legal.some(c => cardKey(c) === cardKey(act.card)),
-          `game ${gameIdx}: bot plays a legal card`);
+          `${id}: bot plays a legal card`);
         r = processPlayCard(state, actor, act.card);
         break;
       }
-      default: assert(false, `game ${gameIdx}: unknown bot action ${act.action}`); return;
+      default: assert(false, `${id}: unknown bot action ${act.action}`); return;
     }
-    assert(r && r.ok, `game ${gameIdx}: ${act.action} by ${actor} accepted (${r && r.error})`);
+    assert(r && r.ok, `${id}: ${act.action} by ${actor} accepted (${r && r.error})`);
+
+    if (r.redeal) {
+      redeals++;
+      assert(!rules.stickDealer, `${id}: redeal only when stick-the-dealer is off`);
+      assert(redeals < 500, `${id}: not stuck in redeals`);
+      state = newRound(state);
+      dealCards(state);
+    }
   }
 }
 
+// Full games across the house-rule matrix
+const RULESETS = [
+  ['default',   {}],
+  ['no_peek',   { passPeek: 'no_peek' }],
+  ['pass4',     { passCount: 4 }],
+  ['no_pass',   { passCount: 0 }],
+  ['stick_off', { stickDealer: false }],
+  ['must_trump',{ playRules: 'must_trump' }],
+  ['follow',    { playRules: 'follow_suit' }],
+  ['variant_mix', { goal: 100, minBid: 20, lastTrickBonus: 2, needTrickToScore: false }],
+  ['kitchen_sink', { goal: 300, minBid: 30, passCount: 4, passPeek: 'no_peek',
+                     playRules: 'must_trump', stickDealer: false, lastTrickBonus: 2 }],
+];
+
 const NUM_GAMES = parseInt(process.argv[2] || '300', 10);
-const stats = { games: 0, rounds: 0, ns: 0, ew: 0, maxRounds: 0 };
-for (let i = 0; i < NUM_GAMES; i++) {
-  const out = playOneGame(i);
-  if (!out) break;
-  stats.games++;
-  stats.rounds += out.rounds;
-  stats.maxRounds = Math.max(stats.maxRounds, out.rounds);
-  stats[out.winner]++;
+const perSet = Math.max(10, Math.floor(NUM_GAMES / RULESETS.length));
+console.log(`\n── Full-game simulations (${perSet} games × ${RULESETS.length} rulesets) ──`);
+for (const [tag, ruleset] of RULESETS) {
+  const stats = { games: 0, rounds: 0, redeals: 0, ns: 0, ew: 0, maxRounds: 0 };
+  for (let i = 0; i < perSet; i++) {
+    const out = playOneGame(i, ruleset, tag);
+    if (!out) break;
+    stats.games++;
+    stats.rounds += out.rounds;
+    stats.redeals += out.redeals;
+    stats.maxRounds = Math.max(stats.maxRounds, out.rounds);
+    stats[out.winner]++;
+  }
+  console.log(`${tag.padEnd(13)} games ${stats.games} · avg rounds ${(stats.rounds/stats.games).toFixed(1)}` +
+    ` · NS ${stats.ns} / EW ${stats.ew}` + (stats.redeals ? ` · redeals ${stats.redeals}` : ''));
 }
 
-console.log(`\n── Simulation stats ──`);
-console.log(`Games: ${stats.games} · avg rounds/game: ${(stats.rounds/stats.games).toFixed(1)} · max: ${stats.maxRounds}`);
-console.log(`Winners — NS: ${stats.ns} · EW: ${stats.ew}`);
 console.log(`\n${checks} checks, ${failures} failures`);
 process.exit(failures ? 1 : 0);

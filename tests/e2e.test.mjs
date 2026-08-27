@@ -59,11 +59,28 @@ page.on('console', m => { if (m.type() === 'error') errors.push('console: ' + m.
 await page.route(/^https?:\/\/(?!localhost|127\.0\.0\.1)/, r => r.abort());
 
 await page.goto(`http://localhost:${PORT}/`);
+
+// Optional house-rule overrides, e.g. E2E_RULES='{"passPeek":"no_peek","passCount":4}'
+const ruleOverrides = process.env.E2E_RULES ? JSON.parse(process.env.E2E_RULES) : null;
+if (ruleOverrides) {
+  for (const [k, v] of Object.entries(ruleOverrides)) {
+    await page.selectOption('#hr-' + k, String(v));
+  }
+  ok(`house rules set: ${process.env.E2E_RULES}`);
+}
+
 await page.click('.btn-solo');
 await page.waitForSelector('#solo-start-panel', { state: 'visible' });
 await page.click('#solo-start-panel .btn-start-game');
 await page.waitForSelector('#game.active');
 ok('practice game started');
+
+if (ruleOverrides) {
+  const applied = await page.evaluate(() => typeof G !== 'undefined' && G ? G.rules : null);
+  for (const [k, v] of Object.entries(ruleOverrides)) {
+    if (String(applied?.[k]) !== String(v)) fail(`rule ${k} not applied (got ${applied?.[k]}, want ${v})`);
+  }
+}
 
 const snapshot = () => page.evaluate(() => ({
   phase: typeof V !== 'undefined' && V ? V.phase : null,

@@ -36,6 +36,7 @@ function handleHostAction(msg, fromPos) {
       result = processBid(G, fromPos, msg.amount);
       if (!result.ok) { sendError(fromPos, result.error); return; }
       hostLog(result.log);
+      if (result.redeal) { startNextRound(); return; } // four passes — throw it in
       broadcastGameState();
       break;
 
@@ -164,6 +165,14 @@ function buildPlayerView(state, forPos) {
   const involved = state.highBidder &&
     (forPos === state.highBidder || forPos === partnerOf(state.highBidder));
   if (!involved) { v.passedIds = []; v.returnedIds = []; }
+
+  // No-peek: the held cards (and their ids) stay hidden from the bidder
+  // until they have chosen their returns; only the count travels.
+  v.pendingPass = { count: state.pendingPass.length };
+  if (state.phase === 'returning' && state.rules.passPeek === 'no_peek' &&
+      forPos === state.highBidder) {
+    v.passedIds = [];
+  }
 
   v.forPos = forPos; // lets a client recover its seat if 'welcome' was missed
 
